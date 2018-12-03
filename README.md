@@ -245,7 +245,7 @@ Run the following command to create a sample CSS file (_style.css_):
 
 ## Download
 
-The executable can be downloaded from [here](/Releases/DumpReport.zip).
+The executable can be downloaded from [here](/Download/DumpReport.zip).
 
 ## License
 
