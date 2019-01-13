@@ -33,7 +33,7 @@ namespace DumpReport
                 // Create the report file
                 report.Open(config.ReportFile);
 
-                // Basic check of input parameters
+                // Basic check of the input parameters
                 config.CheckParams();
 
                 WriteConsole("Processing dump " + config.DumpFile);
@@ -43,18 +43,19 @@ namespace DumpReport
                 // Execute main debugger script
                 LaunchDebugger(Resources.GetDbgScriptMain(is32bitDump), config.LogFile);
 
-                // Parse debugger output
+                // Process debugger's output
                 WriteConsole("Reading log...");
                 logManager.ReadLog();
                 logManager.ParseLog();
-                if (config.LogClean)
-                    File.Delete(config.LogFile);
 
-                // If the dump does not contain an exception record, try to get it by using auxiliar scripts
-                if (!logManager.ContainsExceptionRecord())
-                    GetExceptionRecord();
+                // If the dump reveals an exception but the details are missing, try to find them
+                if (logManager.GetExceptionInfo() && logManager.NeedMoreExceptionInfo())
+                {
+                    FindExceptionRecord(); // Execute a new script in order to retrieve the exception record
+                    logManager.GetExceptionInfo(); // Check again with the new script output
+                }
 
-                // Write extracted information to the report file and exit
+                // Write the extracted information to the report file
                 logManager.WriteReport();
             }
             catch (Exception ex)
@@ -71,7 +72,7 @@ namespace DumpReport
             WriteConsole("Finished.");
         }
 
-        // Selects the most appropiate debugger depending on the current OS and the dump bitness
+        // Selects the most appropiate debugger to use depending on the current OS and the dump bitness
         public static string GetDebugger()
         {
             if (!Environment.Is64BitOperatingSystem)
@@ -91,59 +92,61 @@ namespace DumpReport
             }
         }
 
+        // Launches the debugger, which automatically executes a script and stores the output into a file
         public static void LaunchDebugger(string script, string outFile)
         {
-            // Create temporary script file
+            // Create a temporary script file
             string scriptFile = Path.Combine(Path.GetTempPath(), "WinDbgScript.txt");
 
             // Set the path of the output file
             using (StreamWriter stream = new StreamWriter(scriptFile))
                 stream.WriteLine(script.Replace("[LOG_FILE]", outFile));
 
-            // Remove output file from previous executions
+            // Remove the output file from previous executions
             File.Delete(outFile);
 
-            // Start debugger process
+            // Start the debugger
             string arguments = string.Format(@"-y ""{0};srv*{1}*http://msdl.microsoft.com/download/symbols"" -z ""{2}"" -c ""$$><{3};q""",
                 config.PdbFolder, config.SymbolCache, config.DumpFile, scriptFile);
             ProcessStartInfo psi = new ProcessStartInfo
             {
                 FileName = GetDebugger(),
-                Arguments = arguments
+                Arguments = arguments,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden // WinDBG will only hide the main window
             };
-
-            if (!config.DbgVisible)
+            using (Process process = Process.Start(psi))
             {
-                psi.CreateNoWindow = true;
-                psi.WindowStyle = ProcessWindowStyle.Hidden;
+                bool finished = process.WaitForExit(config.DbgTimeout * 60 * 1000);
+
+                // Remove the temporary script file
+                File.Delete(scriptFile);
+
+                if (!finished)
+                {
+                    process.Kill();
+                    throw new Exception("The debugger took too long to execute.");
+                }
             }
 
-            Process process = Process.Start(psi);
-            bool finished = process.WaitForExit(config.DbgTimeout * 60 * 1000);
-
-            // Remove temporary script file
-            File.Delete(scriptFile);
-
-            if (!finished)
-            {
-                process.Kill();
-                throw new Exception("Debugger took too long to execute.");
-            }
-
-            // Check that output log has been generated
+            // Check that the output log has been generated
             if (!File.Exists(config.LogFile))
-                throw new Exception("Debugger did not generate a log file.");
+                throw new Exception("The debugger did not generate any output.");
         }
 
+        // Opens an html file with the default browser
         public static void LaunchBrowser(string htmlFile)
         {
             Process.Start(htmlFile);
         }
 
+        // Determines whether the dump corresponds to a 32 or 64-bit process, by reading the
+        // output of a script previously executed by the debugger
         public static void CheckDumpBitness()
         {
             bool x86Found = false;
             bool wow64Found = false;
+            // Read the output file generated by the debugger
             using (StreamReader file = new StreamReader(config.LogFile, Encoding.Unicode))
             {
                 string line;
@@ -158,36 +161,25 @@ namespace DumpReport
             }
 
             if (is32bitDump && GetDebugger() == config.DbgExe64)
-                logManager.comments.Add("32-bit dump processed with a 64-bit debugger.");
+                logManager.notes.Add("32-bit dump processed with a 64-bit debugger.");
             else if (!is32bitDump && GetDebugger() == config.DbgExe32)
-                logManager.comments.Add("64-bit dump processed with a 32-bit debugger.");
+                logManager.notes.Add("64-bit dump processed with a 32-bit debugger.");
             if (wow64Found)
-                logManager.comments.Add("64-bit dumps of 32-bit processes may show inaccurate or incomplete stack traces.");
+                logManager.notes.Add("64-bit dumps of 32-bit processes may show inaccurate or incomplete call stack traces.");
         }
 
         // Tries to obtain the proper exception record by using auxiliary debugger scripts.
-        public static void GetExceptionRecord()
+        public static void FindExceptionRecord()
         {
-            int threadNum = -1;
             string exrLogFile = config.LogFile;
             exrLogFile = Path.ChangeExtension(exrLogFile, ".exr.log"); // Store the output of the exception record script in a separate file
             File.Delete(exrLogFile); // Delete previous logs
 
-            WriteConsole("Getting exception context...");
-            if (is32bitDump)
-            {
-                if (logManager.GetUnhandledExceptionFilterInfo(ref threadNum, out string arg1) == true && arg1 != "00000000")
-                    LaunchDebugger(Resources.GetDbgScriptExcepRec32(threadNum, arg1), exrLogFile);
-                else if (logManager.GetRtlDispatchExceptionInfo(out string arg3) == true)
-                    LaunchDebugger(Resources.GetDbgScriptExcepRecRtl(arg3), exrLogFile);
-            }
-            else
-            {
-                if (logManager.GetKiUserExceptionDispatchInfo(out string childSP) == true)
-                    LaunchDebugger(Resources.GetDbgScriptExcepRec64(childSP), exrLogFile);
-                else if (logManager.GetRtlDispatchExceptionInfo(out string arg3) == true)
-                    LaunchDebugger(Resources.GetDbgScriptExcepRecRtl(arg3), exrLogFile);
-            }
+            WriteConsole("Getting exception record...");
+
+            string script = logManager.GetExceptionRecordScript();
+            if (script != null)
+                LaunchDebugger(script, exrLogFile);
 
             if (File.Exists(exrLogFile))
             {

@@ -9,28 +9,26 @@ namespace DumpReport
     /// </summary>
     class Config
     {
-        public string DbgExe64 { get; set; } // Full path of the 64-bit version debugger
-        public string DbgExe32 { get; set; } // Full path of the 32-bit version debugger
-        public Int32  DbgTimeout { get; set; } // Maximum number of minutes to wait for the debugger to finish
-        public bool   DbgVisible { get; set; } // Runs the debugger in visible or hidden mode (only supported by CDB)
-        public string StyleFile { get; set; } //Full path of a custom CSS file to use
-        public string ReportFile { get; set; } // Full path of the report to be created
-        public bool   ReportShow { get; set; } // If true, the report will be displayed automatically in the default browser
-        public bool   QuietMode { get; set; }  // If true. the application will not show progress messages in the console
-        public string SymbolCache { get; set; } // Folder to use as the debugger's symbol cache
-        public string DumpFile { get; set; } // Full path of the DMP file
-        public string PdbFolder { get; set; } // Folder where the PDBs are located
-        public string LogFile { get; set; } // Full path of the debugger's output file
-        public string LogFolder { get; set; } // Folder where the debugger's output file is stored
-        public bool   LogClean { get; set; } // If true, log files are deleted after execution
-        public string SourceCodeRoot { get; set; } // Specifies a root folder for the source files
+        public string DbgExe64 { get; set; }        // Full path of the 64-bit version debugger
+        public string DbgExe32 { get; set; }        // Full path of the 32-bit version debugger
+        public Int32  DbgTimeout { get; set; }      // Maximum number of minutes to wait for the debugger to finish
+        public string StyleFile { get; set; }       // Full path of a custom CSS file to use
+        public string ReportFile { get; set; }      // Full path of the report to be created
+        public bool   ReportShow { get; set; }      // If true, the report will be displayed automatically in the default browser
+        public bool   QuietMode { get; set; }       // If true. the application will not show progress messages in the console
+        public string SymbolCache { get; set; }     // Folder to use as the debugger's symbol cache
+        public string DumpFile { get; set; }        // Full path of the DMP file
+        public string PdbFolder { get; set; }       // Folder where the PDBs are located
+        public string LogFile { get; set; }         // Full path of the debugger's output file
+        public string LogFolder { get; set; }       // Folder where the debugger's output file is stored
+        public bool   LogClean { get; set; }        // If true, log files are deleted after execution
+        public string SourceCodeRoot { get; set; }  // Specifies a root folder for the source files
 
         public Config()
         {
             DbgExe64 = String.Empty;
             DbgExe32 = String.Empty;
             DbgTimeout = 10;
-            DbgVisible = true;
             StyleFile = String.Empty;
             ReportFile = "DumpReport.html";
             ReportShow = false;
@@ -100,9 +98,6 @@ namespace DumpReport
                                     value = reader["timeout"];
                                     if (value != null && value.Length > 0)
                                         DbgTimeout = Convert.ToInt32(value);
-                                    value = reader["visible"];
-                                    if (value != null && value.Length > 0)
-                                        DbgVisible = (value == "1");
                                     break;
                                 case "Pdb":
                                     value = reader["folder"];
@@ -154,24 +149,30 @@ namespace DumpReport
         // Reads the parameters from the command-line
         public void ReadCommandLine(string[] args)
         {
-            if (args.Length == 1 && (Path.GetExtension(args[0]).ToUpper() == ".DMP"))
+            if (args.Length == 1 && Path.GetExtension(args[0]).ToUpper() == ".DMP")
             {
-                if (File.Exists(args[0]))
-                    DumpFile = args[0];
-                else
-                    throw new ArgumentException("Dump file '" + args[0] + "' not found");
+                if (!File.Exists(args[0])) throw new Exception("Dump file not found: " + args[0]);
+                DumpFile = args[0];
                 return;
             }
-            for (int idx = 0; idx < args.Length; idx++)
+            try
             {
-                if (args[idx] == "/DUMPFILE")        DumpFile = GetParamValue(args, ref idx);
-                else if (args[idx] == "/PDBFOLDER")  PdbFolder = GetParamValue(args, ref idx);
-                else if (args[idx] == "/REPORTFILE") ReportFile = GetParamValue(args, ref idx);
-                else if (args[idx] == "/SHOWREPORT") ReportShow = (GetParamValue(args, ref idx) == "1");
-                else if (args[idx] == "/QUIET")      QuietMode = (GetParamValue(args, ref idx) == "1");
+                for (int idx = 0; idx < args.Length; idx++)
+                {
+                    if (args[idx] == "/DUMPFILE") DumpFile = GetParamValue(args, ref idx);
+                    else if (args[idx] == "/PDBFOLDER") PdbFolder = GetParamValue(args, ref idx);
+                    else if (args[idx] == "/REPORTFILE") ReportFile = GetParamValue(args, ref idx);
+                    else if (args[idx] == "/SHOWREPORT") ReportShow = (GetParamValue(args, ref idx) == "1");
+                    else if (args[idx] == "/QUIET") QuietMode = (GetParamValue(args, ref idx) == "1");
+                    else throw new ArgumentException("Invalid parameter " + args[idx]);
+                }
+                if (DumpFile.Length == 0)
+                    throw new ArgumentException("/DUMPFILE parameter not found");
             }
-            if (DumpFile.Length == 0)
-                throw new ArgumentException("/DUMPFILE parameter not found");
+            catch (ArgumentException ex)
+            {
+                throw new ArgumentException(ex.Message + "\r\nPlease type 'DumpReport' for help." );
+            }
         }
 
         // Retrieves the value from the pair '/PARAMETER value'
@@ -188,7 +189,7 @@ namespace DumpReport
             if (!File.Exists(DumpFile))
                 throw new ArgumentException("Dump file not found: " + DumpFile);
             if (DbgExe64.Length == 0 && DbgExe32.Length == 0)
-                throw new ArgumentException("Debuggers not specified.");
+                throw new ArgumentException("No debuggers specified in the configuration file.\r\nPlease type 'DumpReport /CONFIG HELP' for help.");
             if (!Environment.Is64BitOperatingSystem && DbgExe32.Length == 0)
                 throw new Exception("The attribute 'exe32' must be set on 32-bit computers.");
             if (DbgExe64.Length > 0 && !File.Exists(DbgExe64))
@@ -224,12 +225,17 @@ namespace DumpReport
             LogFolder = Utils.GetAbsolutePath(LogFolder);
         }
 
+        static void PrintColor(string line, ConsoleColor color)
+        {
+            Console.ForegroundColor = color;
+            Console.WriteLine(line);
+            Console.ResetColor();
+        }
+
         // Prints the application title to the console
         static void PrintTitle()
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("\n" + Resources.appTitle);
-            Console.ResetColor();
+            PrintColor("\n" + Resources.appTitle, ConsoleColor.Yellow);
         }
 
         // Prints the application usage to the console
@@ -244,7 +250,11 @@ namespace DumpReport
         static bool PrintConfigHelp()
         {
             PrintTitle();
-            Console.WriteLine(string.Format(Resources.xmlHelp, Path.GetFileName(Program.configFile), Resources.xml));
+            Console.WriteLine(string.Format(Resources.xmlHelpIntro, Path.GetFileName(Program.configFile)));
+            PrintColor("\r\nSample:\r\n", ConsoleColor.White);
+            Console.WriteLine(Resources.xml);
+            PrintColor("Nodes:", ConsoleColor.White);
+            Console.WriteLine(Resources.xmlHelpNodes);
             return true;
         }
 

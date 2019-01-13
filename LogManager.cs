@@ -11,11 +11,18 @@ namespace DumpReport
     /// </summary>
     public class ExceptionInfo
     {
-        public string module;
-        public UInt64 address;
-        public string code;
+        public ExceptionInfo() { threadNum = -1; }
+        public bool Found()
+        {
+            return ((description != null && description.Length > 0) || (module != null && module.Length > 0) ||
+                    (frame != null && frame.Length > 0) || address > 0 || threadNum >= 0);
+        }
+
         public string description;
+        public string module;
         public string frame;
+        public UInt64 address;
+        public int    threadNum;
     }
 
     /// <summary>
@@ -29,7 +36,8 @@ namespace DumpReport
         public const string TARGET_INFO      = ">>> TARGET INFO";
         public const string MANAGED_THREADS  = ">>> MANAGED THREADS";
         public const string MANAGED_STACKS   = ">>> MANAGED STACKS";
-        public const string EXCEPTION_RECORD = ">>> EXCEPTION RECORD";
+        public const string EXCEPTION_INFO   = ">>> EXCEPTION INFO";
+        public const string HEAP             = ">>> HEAP";
         public const string INSTRUCT_PTRS    = ">>> INSTRUCTION POINTERS";
         public const string THREAD_STACKS    = ">>> THREAD STACKS";
         public const string LOADED_MODULES   = ">>> LOADED MODULES";
@@ -38,15 +46,16 @@ namespace DumpReport
         // Parser objects
         DumpInfoParser dumpInfoParser = new DumpInfoParser();
         TargetInfoParser targetInfoParser = new TargetInfoParser();
-        ManagedStacksParser managedStacksParser = new ManagedStacksParser();
-        ExcepRecParser excepRecParser = new ExcepRecParser();
-        ThreadParser threadInfoParser = new ThreadParser();
         ManagedThreadsParser managedThreadsParser = new ManagedThreadsParser();
-        ModuleParser moduleParser = new ModuleParser();
+        ManagedStacksParser managedStacksParser = new ManagedStacksParser();
+        ExcepInfoParser excepInfoParser = new ExcepInfoParser();
+        HeapParser heapParser = new HeapParser();
         InstPtrParser instPtrParser = new InstPtrParser();
-        Dictionary<string, Parser> m_parsers = new Dictionary<string, Parser>(); // Relates a Parser object with its section in the debugger's log
+        ThreadParser threadParser = new ThreadParser();
+        ModuleParser moduleParser = new ModuleParser();
+        Dictionary<string, Parser> m_parsers = new Dictionary<string, Parser>(); // Relates a Parser object with its section mark in the debugger's log
 
-        public List<string> comments = new List<string>(); // Set of messages to be noted in the report
+        public List<string> notes = new List<string>(); // Set of messages to be noted in the report
         ExceptionInfo exceptionInfo = new ExceptionInfo();
         Report report = null; // Outputs extracted data to an HTML file
         Config config = null; // Stores the paramaters of the application
@@ -64,9 +73,10 @@ namespace DumpReport
             m_parsers.Add(TARGET_INFO, targetInfoParser);
             m_parsers.Add(MANAGED_THREADS, managedThreadsParser);
             m_parsers.Add(MANAGED_STACKS, managedStacksParser);
-            m_parsers.Add(EXCEPTION_RECORD, excepRecParser);
+            m_parsers.Add(EXCEPTION_INFO, excepInfoParser);
+            m_parsers.Add(HEAP, heapParser);
             m_parsers.Add(INSTRUCT_PTRS, instPtrParser);
-            m_parsers.Add(THREAD_STACKS, threadInfoParser);
+            m_parsers.Add(THREAD_STACKS, threadParser);
             m_parsers.Add(LOADED_MODULES, moduleParser);
             m_parsers.Add(END_OF_LOG, null);
         }
@@ -86,7 +96,7 @@ namespace DumpReport
 
         // Reads the debugger's output log file and distributes the lines of each log section
         // to the corresponding Parser object.
-        public bool ReadLog()
+        public void ReadLog()
         {
             try
             {
@@ -110,26 +120,41 @@ namespace DumpReport
             catch (Exception ex)
             {
                 Program.ShowError(ex.Message);
-                return false;
             }
-            return true;
         }
 
         // Once the log file has been read, parse each section.
-        public bool ParseLog()
+        public void ParseLog()
         {
             try
             {
                 foreach (Parser parser in m_parsers.Values)
                     if (parser != null) parser.Parse();
+                CheckParserInfo();
                 CombineParserInfo();
             }
             catch (Exception ex)
             {
                 Program.ShowError(ex.Message);
-                return false;
             }
-            return true;
+            if (config.LogClean)
+                File.Delete(config.LogFile);
+        }
+
+        // Checks the extracted info and notifies possible anomalies
+        void CheckParserInfo()
+        {
+            // Check if the environment variables could be retrieved
+            if (targetInfoParser.Environment.Keys.Count == 0)
+                notes.Add("The environment variables could not be retrieved.");
+
+            // Check if some PDB files have been loaded from the expected location
+            bool PdbLoadedFromPath = false;
+                foreach (ModuleInfo module in moduleParser.Modules)
+                    if (module.pdbPath.ToUpper().Contains(config.PdbFolder.ToUpper()))
+                        PdbLoadedFromPath = true;
+            if (!PdbLoadedFromPath)
+                notes.Add("No PDBs loaded from " + config.PdbFolder);
         }
 
         // Complements the information of some Parsers with data from other Parsers
@@ -137,36 +162,49 @@ namespace DumpReport
         {
             // Add managed information to the thread list
             foreach (ManagedStackInfo stack in managedStacksParser.Stacks)
-                threadInfoParser.AddManagedInfo(stack.thread_num, stack);
+                threadParser.AddManagedInfo(stack.threadNum, stack);
             // Add instruction pointers to the thread list
-            threadInfoParser.SetInstructionPointers(instPtrParser.InstPtrs);
-            // Warn if no  PDB symbols were loaded from the expected folder
-            if (!CheckPDBs())
-                comments.Add("No PDBs loaded from " + config.PdbFolder);
+            threadParser.SetInstructionPointers(instPtrParser.InstPtrs);
+        }
+
+        // Returns true if the dump contains an exception and extracts as much information of the exception as possible.
+        public bool GetExceptionInfo()
+        {
+            if (heapParser.ErrorDetected == true)
+            {
+                heapParser.GetExceptionInfo(exceptionInfo, threadParser);
+                return true;
+            }
+            excepInfoParser.GetExceptionInfo(exceptionInfo, threadParser);
+            if (exceptionInfo.threadNum < 0)
+            {
+                // We don't have the exception details but we can at least try to identify the faulting thread
+                exceptionInfo.threadNum = managedThreadsParser.GetFaultingThread(); // Look in the managed threads
+                if (exceptionInfo.threadNum < 0) // Look for keywords in the call stacks
+                    exceptionInfo.threadNum = threadParser.GuessFaultingThread();
+            }
+            return (exceptionInfo.address > 0 || exceptionInfo.threadNum >= 0);
+        }
+
+        // Returns true if the exeption info found is not valid or incomplete
+        public bool NeedMoreExceptionInfo()
+        {
+            return heapParser.ErrorDetected == false && exceptionInfo.address == 0;
         }
 
         // Process a specific log file that only contains an exception record
         public void ParseExceptionRecord(string file)
         {
-            excepRecParser.RemoveLines();
+            excepInfoParser.RemoveLines();
             if (!File.Exists(file))
                 return;
             using (StreamReader stream = new StreamReader(file, Encoding.Unicode))
             {
                 string line;
                 while ((line = stream.ReadLine()) != null)
-                    excepRecParser.AddLine(line);
+                    excepInfoParser.AddLine(line);
             }
-            excepRecParser.Parse();
-        }
-
-        // Check if  PDB files have been loaded from the expected location
-        bool CheckPDBs()
-        {
-            foreach (ModuleInfo module in moduleParser.Modules)
-                if (module.pdbPath.ToUpper().Contains(config.PdbFolder.ToUpper()))
-                    return true;
-            return false;
+            excepInfoParser.Parse();
         }
 
         // Writes all information to the report
@@ -176,7 +214,7 @@ namespace DumpReport
             WriteHeader();
             WriteExceptionInfo();
             WriteAllThreads();
-            report.WriteJavascript(threadInfoParser.GetNumThreads());
+            report.WriteJavascript(threadParser.GetNumThreads());
         }
 
         // Writes the top part of the report
@@ -185,36 +223,18 @@ namespace DumpReport
             report.WriteDumpInfo(dumpInfoParser);
             report.WriteTargetInfo(targetInfoParser);
             report.WriteModuleInfo(moduleParser.Modules);
-            report.WriteComments(comments);
+            report.WriteNotes(notes);
         }
 
         // Tries to find an exception in the dump file and writes the info to the report.
         void WriteExceptionInfo()
         {
-            int faultThreadNum = -1; // Index of the thread containing the exception
-
-            if (excepRecParser.ContainsExceptionRecord())
-            {
-                excepRecParser.GetExceptionInfo(exceptionInfo);
-                // Find the faulting thread by searching the exception address in the stacks or instruction pointers
-                faultThreadNum = threadInfoParser.GetThreadByRetAddr(exceptionInfo.address);
-                if (faultThreadNum < 0)
-                    faultThreadNum = instPtrParser.GetThread(exceptionInfo.address);
-            }
-
-            if (faultThreadNum < 0) // Look in the managed threads
-                faultThreadNum = managedThreadsParser.GetFaultingThread();
-
-            if (faultThreadNum < 0) // Look for keywords in the stack traces
-                faultThreadNum = threadInfoParser.GuessFaultingThread();
-
-            if (exceptionInfo.address > 0 || faultThreadNum >= 0) // Exception information found
+            if (exceptionInfo.Found() == true)
             {
                 report.WriteSectionTitle("Exception Information");
-                if (exceptionInfo.address > 0)
-                    report.WriteExceptionInfo(exceptionInfo);
-                if (faultThreadNum >= 0)
-                    report.WriteThreadInfo(threadInfoParser.GetThread(faultThreadNum), true);
+                report.WriteExceptionInfo(exceptionInfo);
+                if (exceptionInfo.threadNum >= 0)
+                    report.WriteFaultingThreadInfo(threadParser.GetThread(exceptionInfo.threadNum));
             }
             else
                 report.Write("No exception found.");
@@ -223,16 +243,62 @@ namespace DumpReport
         // Write the information of all threads found in the dump file
         void WriteAllThreads()
         {
-            report.WriteSectionTitle(string.Format("All Threads ({0})", threadInfoParser.GetNumThreads()));
+            report.WriteSectionTitle(string.Format("All threads ({0}) grouped by call stack", threadParser.GetNumThreads()));
             report.WriteAllThreadsMenu();
-            foreach (ThreadInfo threadInfo in threadInfoParser.Threads)
-                report.WriteThreadInfo(threadInfo);
+            Dictionary<string, List<ThreadInfo>> threadGroups = threadParser.GroupThreadsByCallStack();
+            foreach (List<ThreadInfo> threads in threadGroups.Values)
+                report.WriteThreadInfo(threads);
         }
 
-        // The following funtions just call the analogous function in the corresponding Parser object
-        public bool ContainsExceptionRecord() { return excepRecParser.ContainsExceptionRecord(); }
-        public bool GetUnhandledExceptionFilterInfo(ref int threadNum, out string arg1) { return threadInfoParser.GetUnhandledExceptionFilterInfo(ref threadNum, out arg1); }
-        public bool GetKiUserExceptionDispatchInfo(out string childSP) { return threadInfoParser.GetKiUserExceptionDispatchInfo(out childSP); }
-        public bool GetRtlDispatchExceptionInfo(out string arg3) { return threadInfoParser.GetRtlDispatchExceptionInfo(out arg3); }
+        // Returns a script that hopefully will retrieve the exception record
+        public string GetExceptionRecordScript()
+        {
+            FrameInfo frameInfo;
+            ThreadInfo threadInfo;
+
+            if (Program.is32bitDump)
+            {
+                // Find the exception record in the block of memory pointed by the first param of 'UnhandledExceptionFilter'
+                threadParser.GetFrameByKeyword("UnhandledExceptionFilter", out frameInfo, out threadInfo);
+                if (frameInfo != null && Utils.NotZeroAddress(frameInfo.argsToChild1))
+                {
+                    System.Diagnostics.Trace.WriteLine("GetExceptionRecordScript-> " + Path.GetFileName(config.DumpFile) + " using UnhandledExceptionFilter (x86)");
+                    return Resources.dbgUnhandledExceptionFilter32.Replace("[FIRST_PARAM]", frameInfo.argsToChild1);
+                }
+                // Find the exception record in the address pointed by the third param of 'RtlDispatchException'
+                threadParser.GetFrameByKeyword("RtlDispatchException", out frameInfo, out threadInfo);
+                if (frameInfo != null && Utils.NotZeroAddress(frameInfo.argsToChild3))
+                {
+                    System.Diagnostics.Trace.WriteLine("GetExceptionRecordScript-> " + Path.GetFileName(config.DumpFile) + " using RtlDispatchException (x86)");
+                    return Resources.dbgRtlDispatchException.Replace("[THIRD_PARAM]", frameInfo.argsToChild3);
+                }
+            }
+            else
+            {
+                // Find the exception record in the call stack of the 'KiUserExceptionDispatch' frame
+                threadParser.GetFrameByKeyword("KiUserExceptionDispatch", out frameInfo, out threadInfo);
+                if (frameInfo != null && Utils.NotZeroAddress(frameInfo.childSP))
+                {
+                    System.Diagnostics.Trace.WriteLine("GetExceptionRecordScript-> " + Path.GetFileName(config.DumpFile) + " using KiUserExceptionDispatch");
+                    return Resources.dbgKiUserExceptionDispatch.Replace("[CHILD_SP]", frameInfo.childSP);
+                }
+                // Find the exception record in the block of memory pointed by the fourth param of 'WerpReportFault'
+                threadParser.GetFrameByKeyword("WerpReportFault", out frameInfo, out threadInfo);
+                if (frameInfo != null && Utils.NotZeroAddress(frameInfo.argsToChild4))
+                {
+                    System.Diagnostics.Trace.WriteLine("GetExceptionRecordScript-> " + Path.GetFileName(config.DumpFile) + " using WerpReportFault");
+                    return Resources.dbgWerpReportFault64.Replace("[FOURTH_PARAM]", frameInfo.argsToChild4);
+                }
+                // Find the exception record in the address pointed by the third param of 'RtlDispatchException'
+                threadParser.GetFrameByKeyword("RtlDispatchException", out frameInfo, out threadInfo);
+                if (frameInfo != null && Utils.NotZeroAddress(frameInfo.argsToChild3))
+                {
+                    System.Diagnostics.Trace.WriteLine("GetExceptionRecordScript-> " + Path.GetFileName(config.DumpFile) + " using RtlDispatchException");
+                    return Resources.dbgRtlDispatchException.Replace("[THIRD_PARAM]", frameInfo.argsToChild3);
+                }
+            }
+            System.Diagnostics.Trace.WriteLine("GetExceptionRecordScript-> " + Path.GetFileName(config.DumpFile) + " No suitable method found");
+            return null;
+        }
     }
 }

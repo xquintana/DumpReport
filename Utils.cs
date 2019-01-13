@@ -6,16 +6,40 @@ namespace DumpReport
     class Utils
     {
         // Converts a value from hexadecimal string format to unsigned 64-bit integer
-        public static UInt64 StringHexToUInt64(string hexString)
+        public static UInt64 StrHexToUInt64(string hexString)
         {
-            return UInt64.Parse(hexString.Replace("0x", String.Empty), System.Globalization.NumberStyles.HexNumber);
+            UInt64 result;
+            try
+            {
+                result = UInt64.Parse(hexString.Replace("0x", String.Empty), System.Globalization.NumberStyles.HexNumber);
+            }
+            catch (Exception)
+            {
+                throw new Exception("Cannot convert address " + hexString);
+            }
+            return result;
         }
 
         // Converts a value from unsigned 64-bit integer to hexadecimal string format
-        public static string UInt64toStringHex(UInt64 value)
+        public static string UInt64toStringHex(UInt64 value, bool prefix = true)
         {
             string valueHex = (Program.is32bitDump) ? value.ToString("X8") : value.ToString("X16");
-            return "0x" + valueHex;
+            return prefix ? "0x" + valueHex : valueHex;
+        }
+
+        // Returns true if the input strings represent the same hexadecimal address
+        public static bool SameStrAddress(string addr1, string addr2)
+        {
+            // Normalize strings
+            string addr1Norm = addr1.Replace("0x", String.Empty).ToUpper().TrimStart('0');
+            string addr2Norm = addr2.Replace("0x", String.Empty).ToUpper().TrimStart('0');
+            return addr1Norm == addr2Norm;
+        }
+
+        // Returns true if the address represented by the input string is not zero
+        public static bool NotZeroAddress(string addr)
+        {
+            return (addr.Replace("0x", String.Empty).TrimStart('0').Length > 0);
         }
 
         // Converts a timestamp string from hexadecimal format (POSIX) to format "dd/MM/yyyy HH:mm:ss"

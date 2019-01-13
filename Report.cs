@@ -11,7 +11,7 @@ namespace DumpReport
     /// </summary>
     class Report : IDisposable
     {
-        const string FRAME_STYLE_SOURCECODE = "sourcecode_frame";
+        const string FRAME_STYLE_SOURCECODE = "sourcecode-frame";
 
         StreamWriter stream; // Stream representing the output HTML file (report)
         Config config; // Stores the paramaters of the application
@@ -106,7 +106,7 @@ namespace DumpReport
         void WriteHTMLHeader()
         {
             if (stream == null) return;
-            stream.WriteLine("<header><title>Dump Report</title>");
+            stream.WriteLine(string.Format("<header><meta charset='UTF-8'><title>Dump Report [{0}]</title>", Path.GetFileName(config.DumpFile)));
             if (config.StyleFile.Length == 0 || ImportStyle(config.StyleFile) == false)
                 WriteStyle(Resources.css);
             stream.WriteLine("</header>");
@@ -159,7 +159,7 @@ namespace DumpReport
             if (targetInfo.CommandLine != null)
                 WriteValue("Command Line", targetInfo.CommandLine);
             if (targetInfo.ProcessId != null)
-                WriteValue("Process Id", string.Format("{0} ({1})", targetInfo.ProcessId, Utils.StringHexToUInt64(targetInfo.ProcessId)));
+                WriteValue("Process Id", string.Format("{0} ({1})", targetInfo.ProcessId, Utils.StrHexToUInt64(targetInfo.ProcessId)));
             if (targetInfo.ComputerName != null)
                 WriteValue("Computer Name", targetInfo.ComputerName);
             if (targetInfo.UserName != null)
@@ -167,69 +167,84 @@ namespace DumpReport
 
             WriteValue("Operating System", targetInfo.OsInfo);
 
-            Table table = new Table("report_table");
-            table.EmphasizeFirstCol = true;
-            table.AddHeader(new string[] { "Environment Variable", "Value" });
-            foreach (string envvar in targetInfo.Environment.Keys)
-                table.AddRow(new string[] { envvar, targetInfo.Environment[envvar] });
-            InsertToggleContent("Environment Variables", table.Serialize());
+            if (targetInfo.Environment.Keys.Count > 0)
+            {
+                Table table = new Table("report-table");
+                table.EmphasizeFirstCol = true;
+                table.AddHeader(new string[] { "Environment Variable", "Value" });
+                foreach (string envvar in targetInfo.Environment.Keys)
+                    table.AddRow(new string[] { envvar, targetInfo.Environment[envvar] });
+                InsertToggleContent("Environment Variables", table.Serialize());
+            }
         }
 
         public void WriteModuleInfo(List<ModuleInfo> modules)
         {
             if (stream == null) return;
-            Table table = new Table("report_table");
+            Table table = new Table("report-table");
             table.AddHeader(new string[] { "Start Address", "End Address", "Module Name", "Timestamp", "Time",
                 "Path", "File Version", "Product Version", "Description", "PDB status", "PDB Path" });
             foreach (ModuleInfo module in modules)
-                table.AddRow(new string[] { module.startAddr, module.endAddr, module.moduleName, module.timestamp, Utils.TimestampToLocalDateTime(module.timestamp),
+                table.AddRow(new string[] { module.startAddr.TrimStart('0'), module.endAddr.TrimStart('0'), module.moduleName, module.timestamp, Utils.TimestampToLocalDateTime(module.timestamp),
                     module.imagePath, module.fileVersion, module.productVersion, module.fileDescription, module.pdbStatus, module.pdbPath }, "td");
             InsertToggleContent("Loaded Modules", table.Serialize());
         }
 
-        public void WriteComments(List<string> comments)
+        public void WriteNotes(List<string> notes)
         {
-            if (comments.Count > 0)
-                Write("<b>Comments</b>");
-            foreach (string comment in comments)
-                Write(comment);
+            if (notes.Count > 0)
+                Write("<br><b>Notes:</b>");
+            foreach (string note in notes)
+                Write(note);
         }
 
         public void WriteExceptionInfo(ExceptionInfo exceptionInfo)
         {
-            if (exceptionInfo.code != null && exceptionInfo.code.Length > 0)
-            {
-                string exceptionCode = exceptionInfo.code;
-                if (exceptionInfo.description != null && exceptionInfo.description.Length > 0)
-                    exceptionCode += " (" + exceptionInfo.description + ")";
-                WriteValue("Exception Code", exceptionCode);
-            }
+            if (exceptionInfo.description != null && exceptionInfo.description.Length > 0)
+                WriteValue("Exception", exceptionInfo.description);
             if (exceptionInfo.module != null && exceptionInfo.module.Length > 0)
                 WriteValue("Module", exceptionInfo.module);
             if (exceptionInfo.address > 0)
                 WriteValue("Exception Address", Utils.UInt64toStringHex(exceptionInfo.address));
             if (exceptionInfo.frame != null && exceptionInfo.frame.Length > 0)
-                WriteValue("Faulting Frame", exceptionInfo.frame);
+                WriteValue("Faulting Frame", EscapeSpecialChars(exceptionInfo.frame));
         }
 
-        public void WriteThreadInfo(ThreadInfo thread, bool isFaultThread = false)
+        public void WriteFaultingThreadInfo(ThreadInfo faultThread)
         {
-            if (stream == null) return;
+            List<ThreadInfo> threadList = new List<ThreadInfo>();
+            threadList.Add(faultThread);
+            WriteThreadInfo(threadList, true);
+        }
+
+        // Receives a list of threads with a common call stack
+        public void WriteThreadInfo(List<ThreadInfo> threads, bool isFaultThread = false)
+        {
             int counter = 0;
-            List<StackFrameInfo> stack = thread.stack;
+            if (stream == null) return;
+            if (threads.Count == 0)
+                return;
 
-            // Thread number and expand/collapse buttons
-            string divName = string.Format("divThread{0}{1}", thread.thread_num, isFaultThread ? "_fault" : String.Empty);
-            string buttonId = string.Format("btThread{0}{1}", thread.thread_num, isFaultThread ? "_fault" : String.Empty);
-            string threadLabel = string.Format("Thread: #{0} <font face='Courier New'>(id=0x{1}/{2}) {3}:{4}</font>",
-                thread.thread_num, thread.thread_id, UInt32.Parse(thread.thread_id, System.Globalization.NumberStyles.HexNumber), Program.is32bitDump ? "EIP" : "RIP", thread.instruct_ptr);
-
-            // Thread stack
-            Table table = new Table("report_table");
-            table.AddHeader(new string[] { "", "Module", "Function", "File", "Line" });
-            foreach (StackFrameInfo frame in stack)
+            // Expand/collapse buttons
+            string divName = string.Format("divThread{0}{1}", threads[0].threadNum, isFaultThread ? "_fault" : String.Empty);
+            string buttonId = string.Format("btThread{0}{1}", threads[0].threadNum, isFaultThread ? "_fault" : String.Empty);
+            string threadLabel = "";
+            // Thread Id and instruction pointer
+            for (int i = 0; i < threads.Count; i++)
             {
-                table.AddRow(new string[] { counter.ToString(), frame.module, EscapeSpecialChars(frame.function), frame.file, frame.line }, "td", GetStackFrameStyle(frame.file));
+                if (i > 0) threadLabel += "<br>";
+                threadLabel += string.Format("Thread #{0}&nbsp;<span class='thread-id'>(<b>id=</b>0x{1}/{2}) <b>{3}:</b>{4}</span>",
+                    threads[i].threadNum, threads[i].threadId, UInt32.Parse(threads[i].threadId, System.Globalization.NumberStyles.HexNumber),
+                    Program.is32bitDump ? "EIP" : "RIP", threads[i].instructPtr);
+            }
+            // Thread stack
+            List<FrameInfo> stack = threads[0].stack;
+            Table table = new Table("report-table");
+            table.AddHeader(new string[] { "", "Module", "Function", "File", "Line" });
+            foreach (FrameInfo frame in stack)
+            {
+                table.AddRow(new string[] { counter.ToString(), frame.module, EscapeSpecialChars(frame.function), frame.file, frame.line },
+                    "td", GetStackFrameStyle(frame.file));
                 counter++;
             }
             InsertToggleContent(threadLabel, table.Serialize(), isFaultThread, buttonId, divName);
@@ -260,10 +275,10 @@ namespace DumpReport
                 divName = "div" + id;
             displayStyle = show ? "display:initial" : "display:none";
 
-            string toggleCode = string.Format("<table class='toggleHeader'><tr><td><button class='toggleButton' id='{0}' " +
-                "onclick=\"toggle('{1}','{0}')\">+</button></td><td><b>&nbsp;{2}</b><br></td></tr></table>" +
+            string toggleCode = string.Format("<table class='toggle-header'><tr><td><button class='toggle-button' id='{0}' " +
+                "onclick=\"toggle('{1}','{0}')\">{4}</button></td><td><b>{2}</b></td></tr></table>\n" +
                 "<div id='{1}' style='{3}'>",
-                buttonId, divName, label, displayStyle);
+                buttonId, divName, label, displayStyle, show ? "-" : "+");
             stream.WriteLine(toggleCode);
             stream.WriteLine(content);
             stream.WriteLine("</div>");

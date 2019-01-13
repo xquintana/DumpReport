@@ -8,13 +8,15 @@ using System.Diagnostics;
 namespace DumpReport
 {
     /**
+     * ****** INFO Classes ******
+     *
      * The 'Info' classes represent units of information present in the dump log.
      * For example, they store data about a single thread, a loaded module,..etc
      * This information is extracted by means of classes of type 'Parser', declared later on.
      * */
 
     /// <summary>
-    /// Stores information about a managed stack frame.
+    /// Stores information about a managed call stack frame.
     /// </summary>
     class ManagedStackFrameInfo
     {
@@ -23,12 +25,12 @@ namespace DumpReport
         public string callSite;
     }
     /// <summary>
-    /// Stores information about a managed stack.
+    /// Stores information about a managed call stack.
     /// </summary>
     class ManagedStackInfo
     {
-        public string thread_id;
-        public int thread_num;
+        public string threadId;
+        public int threadNum;
         public List<ManagedStackFrameInfo> frames;
     }
     /// <summary>
@@ -36,26 +38,28 @@ namespace DumpReport
     /// </summary>
     class ManagedThreadInfo
     {
-        public int thread_num; // Thread number in total threads
-        public int thread_num_managed; // Thread number in managed threads
-        public string thread_id;
-        public string thread_obj;
+        public int threadNum; // Thread number in total threads
+        public int threadNumManaged; // Thread number in managed threads
+        public string threadId;
+        public string threadObj;
         public string state;
-        public string gc_mode;
-        public string gc_alloc_ctx;
+        public string gcMode;
+        public string gcAllocCtx;
         public string domain;
-        public string lock_count;
+        public string lockCount;
         public string apt;
         public string exception;
     }
     /// <summary>
-    /// Stores information about a stack frame.
+    /// Stores information about a call stack frame.
     /// </summary>
-    class StackFrameInfo
+    class FrameInfo
     {
+        //public int threadNum;
+        public int numFrame;
         public bool inline;
         public string childSP;
-        public string return_address;
+        public string returnAddress;
         public string argsToChild1;
         public string argsToChild2;
         public string argsToChild3;
@@ -72,10 +76,10 @@ namespace DumpReport
     /// </summary>
     class ThreadInfo
     {
-        public int thread_num; // index of the thread in the thread list
-        public string thread_id;
-        public string instruct_ptr;
-        public List<StackFrameInfo> stack;
+        public int threadNum; // index of the thread in the thread list
+        public string threadId;
+        public string instructPtr;
+        public List<FrameInfo> stack;
     }
     /// <summary>
     /// Stores information about a loaded module.
@@ -96,8 +100,10 @@ namespace DumpReport
     }
 
     /**
-    * The 'Parser' classes extract information from a specific section in the debuggers's output file.
-    */
+     * ****** PARSER Classes ******
+     *
+     * The 'Parser' classes extract information from a specific section in the debuggers's output file.
+     * */
 
     /// <summary>
     /// The base class of all Parser objects.
@@ -145,7 +151,7 @@ namespace DumpReport
                     SosLoaded = true;
                 else if (lines[idx].Contains("eeversion"))
                 {
-                    while (++idx < lines.Count && lines[idx].Contains("*** WARNING")); //skip noise
+                    while (++idx < lines.Count && lines[idx].Contains("*** ")); //skip noise
                     pattern = @"(?<clr_ver>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)";
                     matches = Regex.Matches(lines[idx], pattern);
                     if (matches.Count == 1)
@@ -250,17 +256,17 @@ namespace DumpReport
                 {
                     managedThread = new ManagedThreadInfo
                     {
-                        thread_num         = Convert.ToInt32(matches[0].Groups["thread_num"].Value),
-                        thread_num_managed = Convert.ToInt32(matches[0].Groups["thread_num_man"].Value),
-                        thread_id          = matches[0].Groups["osid"].Value,
-                        thread_obj         = matches[0].Groups["thread_obj"].Value,
-                        state              = matches[0].Groups["state"].Value,
-                        gc_mode            = matches[0].Groups["gc_mode"].Value,
-                        gc_alloc_ctx       = matches[0].Groups["gc_alloc_ctx"].Value,
-                        domain             = matches[0].Groups["domain"].Value,
-                        lock_count         = matches[0].Groups["lock_count"].Value,
-                        apt                = matches[0].Groups["apt"].Value,
-                        exception          = matches[0].Groups["exception"].Value
+                        threadNum        = Convert.ToInt32(matches[0].Groups["thread_num"].Value),
+                        threadNumManaged = Convert.ToInt32(matches[0].Groups["thread_num_man"].Value),
+                        threadId         = matches[0].Groups["osid"].Value,
+                        threadObj        = matches[0].Groups["thread_obj"].Value,
+                        state            = matches[0].Groups["state"].Value,
+                        gcMode           = matches[0].Groups["gc_mode"].Value,
+                        gcAllocCtx       = matches[0].Groups["gc_alloc_ctx"].Value,
+                        domain           = matches[0].Groups["domain"].Value,
+                        lockCount        = matches[0].Groups["lock_count"].Value,
+                        apt              = matches[0].Groups["apt"].Value,
+                        exception        = matches[0].Groups["exception"].Value
                     };
                     threads.Add(managedThread);
                 }
@@ -273,14 +279,14 @@ namespace DumpReport
             {
                 matches = Regex.Matches(thread.exception, "exception", RegexOptions.IgnoreCase);
                 if (matches.Count == 1)
-                    return Convert.ToInt32(thread.thread_num);
+                    return Convert.ToInt32(thread.threadNum);
             }
             return -1;
         }
     }
 
     /// <summary>
-    /// Extracts information about the managed stacks.
+    /// Extracts information about the managed call stacks.
     /// </summary>
     class ManagedStacksParser : Parser
     {
@@ -319,7 +325,10 @@ namespace DumpReport
                             idx--;
                             break;
                         }
-                        pattern = @"(?<child_SP>[\w]{16,})\s(?<ip>[\w+]{16,})\s(?<call_site>.+)";
+                        if (line.Contains("InlinedCallFrame:"))
+                            continue;
+
+                        pattern = @"(?<child_SP>[\w]{8,16})\s(?<ip>[\w]{8,16})\s(?<call_site>.+)";
                         matches = Regex.Matches(line, pattern);
 
                         if (matches.Count == 1)
@@ -327,8 +336,8 @@ namespace DumpReport
                             if (stack == null)
                             {
                                 stack = new ManagedStackInfo();
-                                stack.thread_id = thread_id;
-                                stack.thread_num = thread_num;
+                                stack.threadId = thread_id;
+                                stack.threadNum = thread_num;
                                 stack.frames = new List<ManagedStackFrameInfo>();
                                 Stacks.Add(stack);
                             }
@@ -338,7 +347,7 @@ namespace DumpReport
                             manStackFrame.instructPtr = matches[0].Groups["ip"].Value;
                             manStackFrame.callSite = matches[0].Groups["call_site"].Value;
 
-                            if (manStackFrame.callSite.Contains("*** WARNING:"))
+                            while (manStackFrame.callSite.Contains("*** ") && idx < lines.Count)
                                 manStackFrame.callSite = lines[idx++];
 
                             stack.frames.Add(manStackFrame);
@@ -354,7 +363,7 @@ namespace DumpReport
         {
             foreach (ManagedStackInfo stack in Stacks)
             {
-                if (stack.thread_num == threadNum)
+                if (stack.threadNum == threadNum)
                     return stack;
             }
             return null;
@@ -362,71 +371,201 @@ namespace DumpReport
     }
 
     /// <summary>
-    /// Extracts information about the exception record, if present.
+    /// Extracts information about the exception, if present.
     /// </summary>
-    class ExcepRecParser : Parser
+    class ExcepInfoParser : Parser
     {
-        public UInt64 ExceptionAddr { get; set; }    // Exception address as number
-        public string ExceptionAddrHex { get; set; } // Exception address as hexadecimal string
-        public string ExceptionFrame { get; set; }
-        public string ExceptionCode { get; set; }
-        public string ExceptionDesc { get; set; }
-        public string ExceptionModule { get; set; }
-
-        public bool ContainsExceptionRecord() { return ExceptionAddr != 0;  }
-
-        public void GetExceptionInfo(ExceptionInfo exceptionInfo)
-        {
-            exceptionInfo.code = ExceptionCode;
-            exceptionInfo.description = ExceptionDesc;
-            exceptionInfo.address = ExceptionAddr;
-            exceptionInfo.module = ExceptionModule;
-            exceptionInfo.frame = ExceptionFrame;
-        }
+        UInt64 address;    // Exception address as number
+        string addressHex; // Exception address as hexadecimal string
+        string frame;
+        string description;
+        string module;
+        int    threadNum;
 
         public override void Parse()
         {
-            ExceptionAddr = 0;
-            ExceptionAddrHex = String.Empty;
-            ExceptionFrame = String.Empty;
-            ExceptionCode = String.Empty;
-            ExceptionDesc = String.Empty;
-            ExceptionModule = String.Empty;
+            addressHex = null;
+            frame = null;
+            description = null;
+            module = null;
+            threadNum = -1;
 
             Debug.Assert(lines.Count > 0);
-            foreach (string line in lines)
+            for(int idx=0; idx < lines.Count; idx++)
             {
-                if (line.Contains("ExceptionAddress"))
+                if (lines[idx].Contains("ExceptionAddress:"))
                 {
-                    pattern = @"ExceptionAddress: (?<excep_addr>[\w]+)\s\((?<excep_frame>.+)\)";
-                    matches = Regex.Matches(line, pattern);
+                    pattern = @"ExceptionAddress:\s(?<excep_addr>[\w]+)";
+                    matches = Regex.Matches(lines[idx], pattern);
                     if (matches.Count == 1)
                     {
-                        ExceptionAddrHex = matches[0].Groups["excep_addr"].Value;
-                        ExceptionAddr = Utils.StringHexToUInt64(ExceptionAddrHex);
-                        ExceptionFrame = matches[0].Groups["excep_frame"].Value;
-                        if (ExceptionFrame.Contains("!"))
+                        addressHex = matches[0].Groups["excep_addr"].Value;
+                        address = Utils.StrHexToUInt64(addressHex);
+                        if (address == 0) // This exception record is not valid
+                            return;
+                        // Find exception frame
+                        if (lines[idx].Contains("("))
                         {
-                            string[] parts = ExceptionFrame.Split('!');
-                            if (parts.Length >= 2) ExceptionModule = parts[0];
+                            pattern = @"\s\((?<excep_frame>.+)\)";
+                            matches = Regex.Matches(lines[idx], pattern);
+                            if (matches.Count == 1)
+                            {
+                                frame = matches[0].Groups["excep_frame"].Value;
+                                if (frame.Contains("!"))
+                                {
+                                    string[] parts = frame.Split('!');
+                                    if (parts.Length >= 2) module = parts[0];
+                                }
+                            }
                         }
                     }
                 }
-                else if (line.Contains("ExceptionCode"))
+                else if (lines[idx].Contains("ExceptionCode:"))
                 {
-                    pattern = @"ExceptionCode: (?<excep_code>[\w]+)";
-                    matches = Regex.Matches(line, pattern);
+                    pattern = @"ExceptionCode: (?<exception>.+)";
+                    matches = Regex.Matches(lines[idx], pattern);
                     if (matches.Count == 1)
-                        ExceptionCode = matches[0].Groups["excep_code"].Value;
-                    if (line.Contains("("))
+                        description = matches[0].Groups["exception"].Value;
+                }
+                else if (lines[idx].Contains("EXCEPTION THREAD:"))
+                {
+                    idx++;
+                    pattern = @"(?<thread_num>[0-9]+)\s+Id:\s";
+                    matches = Regex.Matches(lines[idx], pattern);
+                    if (matches.Count == 1)
+                        threadNum = Convert.ToInt32(matches[0].Groups["thread_num"].Value);
+                }
+            }
+        }
+
+        public void GetExceptionInfo(ExceptionInfo exceptionInfo, ThreadParser threadParser)
+        {
+            if (threadNum < 0)
+                threadNum = GetFaultingThreadNum(threadParser);
+
+            if (threadNum >= 0 && address > 0 && (frame == null || module == null))
+            {
+                // Get the frame in the faulting thread with that address
+                FrameInfo frameInfo = threadParser.GetFrameInfoByAddress(threadNum, address);
+                if (frameInfo != null)
+                {
+                    if (frame == null)  frame = frameInfo.function;
+                    if (module == null) module= frameInfo.module;
+                }
+            }
+            // Copy the internal info
+            exceptionInfo.description = description;
+            exceptionInfo.address = address;
+            exceptionInfo.module = module;
+            exceptionInfo.frame = frame;
+            exceptionInfo.threadNum = threadNum;
+        }
+
+        // Returns the index of the faulting thread
+        int GetFaultingThreadNum(ThreadParser threadParser)
+        {
+            // Get all threads containing the exception address
+            int threadNum = -1;
+            List<ThreadInfo> threads = threadParser.GetThreadsByAddress(address);
+            if (threads.Count == 1)
+                threadNum = threads[0].threadNum;
+            else if (threads.Count > 1)
+                threadNum = threadParser.GuessFaultingThread(threads);
+            return threadNum;
+        }
+    }
+
+    /// <summary>
+    /// Stores information about heap errors.
+    /// </summary>
+    class HeapParser : Parser
+    {
+        public bool ErrorDetected { get; set; } // True if a heap error has been detected
+
+        string errorType; // The error type as reported by the debugger
+        string errorDetails; // The report also adds a description to the error type
+        List<UInt64>  stack = new List<UInt64>();  // The stack reported by the !heap command
+
+        public override void Parse()
+        {
+            ErrorDetected = false;
+            Debug.Assert(lines.Count > 0);
+            int idx = 0;
+            while (++idx < lines.Count)
+            {
+                if (lines[idx].Contains("Error type:"))
+                {
+                    ErrorDetected = true;
+                    errorDetails = String.Empty;
+                    pattern = @"Error type:\s+(?<error_type>.+)";
+                    matches = Regex.Matches(lines[idx], pattern);
+                    if (matches.Count == 1)
+                        errorType = matches[0].Groups["error_type"].Value;
+
+                    // Parse the error description and the call stack
+                    while (++idx < lines.Count)
                     {
-                        pattern = @"\s\((?<excep_desc>.+)\)";
-                        matches = Regex.Matches(line, pattern);
-                        if (matches.Count == 1)
-                            ExceptionDesc = matches[0].Groups["excep_desc"].Value;
+                        if (lines[idx].Contains("Stack trace:"))
+                        {
+                            pattern = @"\s+(?<frame_addr>\w+):\s";
+                            while (++idx < lines.Count)
+                            {
+                                if (lines[idx].Contains("*** WARNING"))
+                                    continue;
+                                matches = Regex.Matches(lines[idx], pattern);
+                                if (matches.Count == 1)
+                                    stack.Add(Utils.StrHexToUInt64(matches[0].Groups["frame_addr"].Value));
+                                else return;
+                            }
+                        }
+                        else errorDetails += lines[idx];
                     }
                 }
             }
+        }
+
+        public void GetExceptionInfo(ExceptionInfo exceptionInfo, ThreadParser threadParser)
+        {
+            exceptionInfo.description = "Heap corruption (" + errorType + "). " + errorDetails.Replace(".",". ");
+
+            // Finds out the thread number that corresponds to the extracted call stack
+            List<ThreadInfo> threads = threadParser.GetThreadsByStack(stack);
+            if (threads.Count == 1) // Only one thread is expected
+                exceptionInfo.threadNum = threads[0].threadNum;
+        }
+    }
+
+    /// <summary>
+    /// Stores the values of the 'Instruction Pointer' register (EIP/RIP) of all threads.
+    /// </summary>
+    class InstPtrParser : Parser
+    {
+        public List<string> InstPtrs { get; set; }
+
+        public override void Parse()
+        {
+            Debug.Assert(lines.Count > 0);
+            InstPtrs = new List<string>();
+            pattern = @"=\s(?<inst_ptr>[\w,`]+)";
+
+            foreach (string line in lines)
+            {
+                matches = Regex.Matches(line, pattern);
+                if (matches.Count == 1)
+                    InstPtrs.Add(matches[0].Groups["inst_ptr"].Value.Replace("`", String.Empty));
+            }
+        }
+
+        public int GetThread(UInt64 faultAddress)
+        {
+            int threadCount = 0;
+            foreach (string hexString in InstPtrs)
+            {
+                if (Utils.StrHexToUInt64(hexString) == faultAddress)
+                    return threadCount;
+                threadCount++;
+            }
+            return -1;
         }
     }
 
@@ -437,8 +576,9 @@ namespace DumpReport
     {
         public List<ThreadInfo> Threads { get; set; }
         List<string> ExceptionKeywords = new List<string>();
+        int numFrames = 0;
 
-        // Creates a list of keywords likely to be present in the stack of a faulting thread
+        // Creates a list of keywords likely to be present in the call stack of a faulting thread
         void InitExceptionKeywords()
         {
             ExceptionKeywords = new List<string>
@@ -453,45 +593,11 @@ namespace DumpReport
             };
         }
 
-        public bool GetUnhandledExceptionFilterInfo(ref int threadNum, out string arg1)
-        {
-            arg1 = String.Empty;
-            if (GetFrameByKeyword("UnhandledExceptionFilter", out StackFrameInfo frameInfo, out ThreadInfo threadInfo))
-            {
-                threadNum = threadInfo.thread_num;
-                arg1 = frameInfo.argsToChild1;
-                return true;
-            }
-            return false;
-        }
-
-        public bool GetKiUserExceptionDispatchInfo(out string childSP)
-        {
-            childSP = String.Empty;
-            if (GetFrameByKeyword("KiUserExceptionDispatch", out StackFrameInfo frameInfo, out ThreadInfo threadInfo))
-            {
-                childSP = frameInfo.childSP;
-                return true;
-            }
-            return false;
-        }
-
-        public bool GetRtlDispatchExceptionInfo(out string arg3)
-        {
-            arg3 = String.Empty;
-            if (GetFrameByKeyword("RtlDispatchException", out StackFrameInfo frameInfo, out ThreadInfo threadInfo))
-            {
-                arg3 = frameInfo.argsToChild3;
-                return true;
-            }
-            return false;
-        }
-
-        public void ReplaceThreadStack(int threadNum, List<StackFrameInfo> stack)
+        public void ReplaceThreadStack(int threadNum, List<FrameInfo> stack)
         {
             foreach (ThreadInfo threadInfo in Threads)
             {
-                if (threadInfo.thread_num == threadNum)
+                if (threadInfo.threadNum == threadNum)
                 {
                     threadInfo.stack.Clear();
                     threadInfo.stack = stack;
@@ -518,18 +624,22 @@ namespace DumpReport
                     if (matches.Count == 1)
                     {
                         thread = new ThreadInfo();
-                        thread.stack = new List<StackFrameInfo>();
+                        thread.stack = new List<FrameInfo>();
                         Threads.Add(thread);
-                        thread.thread_num = Convert.ToInt32(matches[0].Groups["thread_num"].Value);
-                        thread.thread_id = matches[0].Groups["thread_id"].Value;
+                        thread.threadNum = Convert.ToInt32(matches[0].Groups["thread_num"].Value);
+                        thread.threadId = matches[0].Groups["thread_id"].Value;
+                        numFrames = 0;
                     }
                 }
                 else if (line.Contains("Inline Function"))
                 {
                     string[] parts = line.Split(new string[] { "--------" }, StringSplitOptions.None);
-                    StackFrameInfo frame = new StackFrameInfo();
-                    frame.callSite = parts[parts.Length - 1].Trim(' ', ':');
-                    frame.inline = true;
+                    FrameInfo frame = new FrameInfo()
+                    {
+                        numFrame = numFrames++,
+                        callSite = parts[parts.Length - 1].Trim(' ', ':'),
+                        inline = true
+                    };
                     ParseCallSite(frame);
                     thread.stack.Add(frame);
                 }
@@ -544,10 +654,11 @@ namespace DumpReport
 
                     if (matches.Count == 1)
                     {
-                        StackFrameInfo frame = new StackFrameInfo
+                        FrameInfo frame = new FrameInfo
                         {
+                            numFrame = numFrames++,
                             childSP = matches[0].Groups["child"].Value.Replace("`",string.Empty),
-                            return_address = matches[0].Groups["return_addr"].Value.Replace("`", string.Empty),
+                            returnAddress = matches[0].Groups["return_addr"].Value.Replace("`", string.Empty),
                             argsToChild1 = matches[0].Groups["args_to_child1"].Value.Replace("`", string.Empty),
                             argsToChild2 = matches[0].Groups["args_to_child2"].Value.Replace("`", string.Empty),
                             argsToChild3 = matches[0].Groups["args_to_child3"].Value.Replace("`", string.Empty),
@@ -566,7 +677,7 @@ namespace DumpReport
             return Threads.Count;
         }
 
-        void ParseCallSite(StackFrameInfo frame)
+        void ParseCallSite(FrameInfo frame)
         {
             // Expected frame format: module!function [file @ line]
             // module and/or file info may be missing.
@@ -595,31 +706,69 @@ namespace DumpReport
             else frame.function = frame.callSite;
         }
 
-        public int GetThreadByRetAddr(UInt64 retAddress)
+        public FrameInfo GetFrameInfoByAddress(int threadNum, UInt64 address)
         {
-            int threadCounter = 0;
-            foreach (ThreadInfo thread in Threads)
+            if (threadNum > Threads.Count)
+                return null;
+            ThreadInfo thread = Threads[threadNum];
+            if (thread.stack.Count == 0)
+                return null;
+            if (Utils.StrHexToUInt64(Threads[threadNum].instructPtr) == address)
+                return thread.stack[0];
+            for (int i=0; i < Threads[threadNum].stack.Count - 1; i++)
             {
-                foreach (StackFrameInfo frame in thread.stack)
-                {
-                    if (frame.inline == true)
-                        continue;
-                    if (Utils.StringHexToUInt64(frame.return_address) == retAddress)
-                        return threadCounter;
-                }
-                threadCounter++;
+                if (thread.stack[i].inline == true)
+                    continue;
+                if (Utils.StrHexToUInt64(thread.stack[i].returnAddress) == address)
+                    return thread.stack[i+1];
             }
-            return -1;
+            return null;
         }
 
-        // Returns the index of the first thread that contains a keyword in the stack trace
-        public bool GetFrameByKeyword(string keyword, out StackFrameInfo frameInfo, out ThreadInfo threadInfo)
+        // Returns a list of threads that contain a specific address
+        public List<ThreadInfo> GetThreadsByAddress(UInt64 address)
+        {
+            List<UInt64> stack = new List<UInt64> { address };
+            return GetThreadsByStack(stack);
+        }
+
+        // Returns a list of threads that contain the input call stack
+        public List<ThreadInfo> GetThreadsByStack(List<UInt64> stack)
+        {
+            List<ThreadInfo> threads = new List<ThreadInfo>();
+
+            // Convert the input stack into a string
+            string inputStackStamp = String.Empty;
+            foreach (UInt64 addr in stack)
+                inputStackStamp += Utils.UInt64toStringHex(addr, false).ToUpper();
+
+            foreach (ThreadInfo thread in Threads)
+            {
+                // Convert current stack into a string
+                string currentStackStamp = String.Empty;
+                foreach (FrameInfo frame in thread.stack)
+                {
+                    if (frame.returnAddress == null)
+                        continue;
+                    currentStackStamp += frame.returnAddress.ToUpper();
+                }
+                // Check if the current stack contains the input stack
+                if (currentStackStamp.Contains(inputStackStamp))
+                    threads.Add(thread);
+            }
+            return threads;
+        }
+
+        // Returns the index of the first thread that contains a keyword in the call stack
+        public bool GetFrameByKeyword(string keyword, out FrameInfo frameInfo, out ThreadInfo threadInfo)
         {
             frameInfo = null;
             threadInfo = null;
+            string pattern = keyword + @"[^\w]";
+
             foreach (ThreadInfo threadInfoAux in Threads)
-                foreach (StackFrameInfo frameInfoAux in threadInfoAux.stack)
-                    if (frameInfoAux.callSite.Contains(keyword))
+                foreach (FrameInfo frameInfoAux in threadInfoAux.stack)
+                    if (Regex.Match(frameInfoAux.function, pattern, RegexOptions.IgnoreCase).Success)
                     {
                         frameInfo = frameInfoAux;
                         threadInfo = threadInfoAux;
@@ -628,19 +777,19 @@ namespace DumpReport
             return false;
         }
 
-        // Returns the index of the first thread that contains an exception keyword
-        public int GuessFaultingThread()
+        // Returns the index of the first thread in a thread list containing an exception keyword.
+        // If the thread list is null, it looks in all threads.
+        public int GuessFaultingThread(List<ThreadInfo> threadList = null)
         {
-            int threadCounter = 0;
-            foreach (ThreadInfo thread in Threads)
+            List<ThreadInfo> threads = (threadList != null) ? threadList : Threads;
+            foreach (ThreadInfo thread in threads)
             {
-                foreach (StackFrameInfo frame in thread.stack)
+                foreach (FrameInfo frame in thread.stack)
                 {
                     foreach (string keyword in ExceptionKeywords)
-                    if (frame.callSite.Contains(keyword))
-                        return threadCounter;
+                        if (frame.callSite.Contains(keyword))
+                            return thread.threadNum;
                 }
-                threadCounter++;
             }
             return -1;
         }
@@ -650,15 +799,18 @@ namespace DumpReport
             return Threads[threadNum];
         }
 
+        // Improves the function names of the managed frames.
         public void AddManagedInfo(int threadNum, ManagedStackInfo managedStack)
         {
-            // Frames are matched by childSP.
-            List<StackFrameInfo> stack = Threads[threadNum].stack;
+            List<FrameInfo> stack = Threads[threadNum].stack;
             foreach (ManagedStackFrameInfo managedFrame in managedStack.frames)
             {
-                foreach (StackFrameInfo frame in stack)
+                foreach (FrameInfo frame in stack)
                 {
-                    if (managedFrame.childSP == frame.childSP)
+                    if (frame.inline)
+                        continue;
+                    if ((Program.is32bitDump && Utils.SameStrAddress(managedFrame.instructPtr, frame.callSite)) ||
+                        (!Program.is32bitDump && managedFrame.childSP == frame.childSP))
                     {
                         frame.callSite = string.Format("(managed)!{0}", managedFrame.callSite);
                         ParseCallSite(frame);
@@ -667,12 +819,35 @@ namespace DumpReport
             }
         }
 
+        // Sets the instruction pointer for each thread
         public void SetInstructionPointers(List<string> instPtrs)
         {
             if (instPtrs.Count != Threads.Count)
                 return;
             for (int i=0; i< Threads.Count; i++)
-                Threads[i].instruct_ptr = instPtrs[i];
+                Threads[i].instructPtr = instPtrs[i];
+        }
+
+        // Returns a dictionary where each value is a list of threads with the same call stack
+        public Dictionary<string, List<ThreadInfo>> GroupThreadsByCallStack()
+        {
+            Dictionary<string, List<ThreadInfo>> groups = new Dictionary<string, List<ThreadInfo>>();
+
+            foreach (ThreadInfo thread in Threads)
+            {
+                string key = String.Empty;
+                foreach (FrameInfo frame in thread.stack)
+                    key += frame.returnAddress;
+                if (groups.ContainsKey(key))
+                    groups[key].Add(thread);
+                else
+                {
+                    List<ThreadInfo> newGroup = new List<ThreadInfo>();
+                    newGroup.Add(thread);
+                    groups.Add(key, newGroup);
+                }
+            }
+            return groups;
         }
     }
 
@@ -767,43 +942,9 @@ namespace DumpReport
             foreach (ModuleInfo module in Modules)
             {
                 if (String.Compare(moduleNameNoExt, module.moduleName, true) == 0)
-                    return Utils.StringHexToUInt64(module.startAddr);
+                    return Utils.StrHexToUInt64(module.startAddr);
             }
             throw new Exception("Cannot get start address of module " + moduleName);
-        }
-    }
-
-    /// <summary>
-    /// Stores the values of the 'Instruction Pointer' register (EIP/RIP) of all threads.
-    /// </summary>
-    class InstPtrParser : Parser
-    {
-        public List<string> InstPtrs { get; set; }
-
-        public override void Parse()
-        {
-            Debug.Assert(lines.Count > 0);
-            InstPtrs = new List<string>();
-            pattern = @"=\s(?<inst_ptr>[\w,`]+)";
-
-            foreach (string line in lines)
-            {
-                matches = Regex.Matches(line, pattern);
-                if (matches.Count == 1)
-                    InstPtrs.Add(matches[0].Groups["inst_ptr"].Value.Replace("`", String.Empty));
-            }
-        }
-
-        public int GetThread(UInt64 faultAddress)
-        {
-            int threadCount = 0;
-            foreach (string hexString in InstPtrs)
-            {
-                if (Utils.StringHexToUInt64(hexString) == faultAddress)
-                    return threadCount;
-                threadCount++;
-            }
-            return -1;
         }
     }
 }
