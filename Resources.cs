@@ -151,7 +151,7 @@ function setVisibility(show) {
     <Pdb folder="""" />
     <Style file="""" />
     <Report file="".\DumpReport.html"" show=""1"" />
-    <Log folder="""" clean=""0""/>
+    <Log folder="""" clean=""1""/>
     <SymbolCache folder="""" />
     <SourceCodeRoot folder="""" />
 </Config >

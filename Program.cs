@@ -130,7 +130,7 @@ namespace DumpReport
             }
 
             // Check that the output log has been generated
-            if (!File.Exists(config.LogFile))
+            if (!File.Exists(outFile))
                 throw new Exception("The debugger did not generate any output.");
         }
 
