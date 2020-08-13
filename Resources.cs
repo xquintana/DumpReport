@@ -2,7 +2,6 @@
 {
     class Resources
     {
-        static public string appTitle   = "DumpReport v1.0";
         static public string configFile = "DumpReportCfg.xml";
 
         #region css
@@ -147,7 +146,7 @@ function setVisibility(show) {
         #region xml
         static public string xml = @"<?xml version=""1.0"" encoding=""utf-8"" ?>
 <Config>
-    <Debugger exe64="""" exe32="""" timeout=""10"" />
+    <Debugger exe64="""" exe32="""" timeout=""60"" />
     <Pdb folder="""" />
     <Style file="""" />
     <Report file="".\DumpReport.html"" show=""1"" />
@@ -177,14 +176,14 @@ DumpReport /DUMPFILE dump_file [/PDBFOLDER pdb_folder] [/REPORTFILE html_file] [
 Example:
     DumpReport /DUMPFILE ""C:\dump\crash.dmp"" /PDBFOLDER ""C:\dump"" /SHOWREPORT 1
 
-If the dump file is the only parameter, the call can be simplified:
+If the dump file is the only argument, the call can be simplified as follows:
     DumpReport ""C:\dump\crash.dmp""
 
-It is also possible to drag and drop the dump directly onto the executable.
+In this case, it is also possible to drag and drop the dump directly onto the executable.
 
 Any value containing spaces must be enclosed in double quotes.
 Providing the PDB files is not necessary but improves the information of the call stack traces.
-The location of the debbuggers to use and other options must be defined in the XML
+The location of the debuggers to use and other options must be defined in the XML
 configuration file ({0}).
 
 Run 'DumpReport /CONFIG HELP' for more information on the XML configuration file.
@@ -244,20 +243,23 @@ Run 'DumpReport /STYLE CREATE' to create a sample CSS file (style.css).";
 
         #region debuggerScripts
 
-        static public string dbgScriptInit = @".logopen /u ""[LOG_FILE]""
+        static public string dbgScriptInit = @".logopen /u ""{LOG_FILE}""
 ||
 .foreach (module {lm1m} ) { .if ($sicmp(""${module}"",""wow64"") == 0) { .echo WOW64 found; } }
 .effmach
 .logclose
 ";
-        static public string dbgScriptMain = @".logopen /u ""[LOG_FILE]""
+        static public string dbgScriptMain = @".logopen /u ""{LOG_FILE}""
 ||
+{PROGRESS_STEP}
 .lines -e
 .foreach (module {lm1m} ) { .if ($sicmp(""${module}"",""wow64"") == 0) { .load soswow64; .echo WOW64 found; .effmach x86;  } }
 .effmach
+.time
 .cordll -ve -u -l
 .chain
 .echo > !eeversion
+{PROGRESS_STEP}
 !eeversion
 .echo >>> TARGET INFO
 !envvar COMPUTERNAME
@@ -268,25 +270,35 @@ Run 'DumpReport /STYLE CREATE' to create a sample CSS file (style.css).";
 vertarget
 !peb
 .echo >>> MANAGED THREADS
+{PROGRESS_STEP}
 !Threads
 .echo >>> MANAGED STACKS
 .block { ~* e !clrstack }
 .echo >>> EXCEPTION INFO
+{PROGRESS_STEP}
 .exr -1
-.echo EXCEPTION THREAD:
+.echo EXCEPTION CONTEXT RECORD:
+.ecxr
+.echo EXCEPTION CALL STACK:
 ~#
+kv n
 .echo >>> HEAP
+{PROGRESS_STEP}
 !heap
 .echo >>> INSTRUCTION POINTERS
-.block { ~* e ? [INSTRUCT_PTR] }
+{PROGRESS_STEP}
+.block { ~* e ? {INSTRUCT_PTR} }
 .echo >>> THREAD STACKS
+{PROGRESS_STEP}
 ~* kv n
 .echo >>> LOADED MODULES
+{PROGRESS_STEP}
 lmov
+{PROGRESS_STEP}
 .echo >>> END OF LOG
 .logclose
 ";
-        static public string dbgUnhandledExceptionFilter32 = @".logopen /u ""[LOG_FILE]""
+        static public string dbgUnhandledExceptionFilter32 = @".logopen /u ""{LOG_FILE}""
 ||
 .block { .effmach x86 }
 .lines -e
@@ -294,28 +306,23 @@ r @$t0 = 0;
 .foreach(value {dd[FIRST_PARAM]}){ .if (@$t0 == 1) { .exr value }; r @$t0 = @$t0 + 1; }
 .logclose
 ";
-        static public string dbgKiUserExceptionDispatch = @".logopen /u ""[LOG_FILE]""
+        static public string dbgKiUserExceptionDispatch = @".logopen /u ""{LOG_FILE}""
 ||
 .exr [CHILD_SP] + @@c++(sizeof(ntdll!_CONTEXT)) + 0x20
 .logclose
 ";
         // Used both with 32 and 64 bits dumps
-        static public string dbgRtlDispatchException = @".logopen /u ""[LOG_FILE]""
+        static public string dbgRtlDispatchException = @".logopen /u ""{LOG_FILE}""
 ||
 .exr [THIRD_PARAM]
 .logclose
 ";
-        static public string dbgWerpReportFault64 = @".logopen /u ""[LOG_FILE]""
+        static public string dbgWerpReportFault64 = @".logopen /u ""{LOG_FILE}""
 ||
 r @$t0 = 0;
 .foreach(value {dq[FOURTH_PARAM]}){ .if (@$t0 == 1) { .exr value; .break; }; r @$t0 = @$t0 + 1; }
 .logclose
 ";
-        public static string GetDbgScriptMain(bool is32bitDump)
-        {
-            return dbgScriptMain.Replace("[INSTRUCT_PTR]", is32bitDump ? "@eip" : "@rip");
-        }
-
         #endregion
     }
 }

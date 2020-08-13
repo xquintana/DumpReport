@@ -2,6 +2,8 @@
 using System.IO;
 using System.Diagnostics;
 using System.Text;
+using System.Threading.Tasks;
+using System.Reflection;
 
 namespace DumpReport
 {
@@ -9,16 +11,18 @@ namespace DumpReport
     {
         static public string configFile = Resources.configFile;
         static public string appDirectory = null;
-        static public bool   is32bitDump = false; // True if the dump corresponds to a 32-bit process
+        static public bool is32bitDump = false; // True if the dump corresponds to a 32-bit process
 
-        static Config     config = new Config(); // Stores the paramaters of the application
-        static Report     report = new Report(config); // Outputs extracted data to an HTML file
+        static Config config = new Config(); // Stores the paramaters of the application
+        static Report report = new Report(config); // Outputs extracted data to an HTML file
         static LogManager logManager = new LogManager(config, report); // Parses the debugger's output log
 
         static void Main(string[] args)
         {
             try
             {
+                WriteTitle();
+
                 appDirectory = new FileInfo(System.Reflection.Assembly.GetExecutingAssembly().Location).DirectoryName;
                 configFile = Path.Combine(appDirectory, configFile);
 
@@ -34,19 +38,22 @@ namespace DumpReport
                 report.Open(config.ReportFile);
 
                 // Basic check of the input parameters
-                config.CheckParams();
+                config.CheckArguments();
 
                 WriteConsole("Processing dump " + config.DumpFile);
+                WriteConsole("Checking dump bitness...", true);
                 // Find out dump bitness.
                 LaunchDebugger(Resources.dbgScriptInit, config.LogFile);
                 CheckDumpBitness();
                 // Execute main debugger script
-                LaunchDebugger(Resources.GetDbgScriptMain(is32bitDump), config.LogFile);
+                WriteConsole("Creating log...", true);
+                LaunchDebugger(Resources.dbgScriptMain, config.LogFile, !config.QuietMode);
 
                 // Process debugger's output
-                WriteConsole("Reading log...");
+                WriteConsole("Reading log...", true);
                 logManager.ReadLog();
                 logManager.ParseLog();
+                logManager.CombineParserInfo();
 
                 // If the dump reveals an exception but the details are missing, try to find them
                 if (logManager.GetExceptionInfo() && logManager.NeedMoreExceptionInfo())
@@ -92,18 +99,44 @@ namespace DumpReport
             }
         }
 
-        // Launches the debugger, which automatically executes a script and stores the output into a file
-        public static void LaunchDebugger(string script, string outFile)
+        static async Task<bool> LaunchDebuggerAsync(Process process)
         {
-            // Create a temporary script file
+            return await Task.Run(() =>
+            {
+                return process.WaitForExit(config.DbgTimeout * 60 * 1000); // Convert minutes to milliseconds
+            });
+        }
+
+        static string PreprocessScript(string script, string outFile, LogProgress progress)
+        {
+            // Insert the output path in the script
+            script = script.Replace("{LOG_FILE}", outFile);
+            // Set the proper intruction pointer register
+            script = script.Replace("{INSTRUCT_PTR}", is32bitDump ? "@eip" : "@rip");
+            // If enabled, insert commands used to measure progress
+            if (progress != null)
+                script = progress.PrepareScript(script, outFile, is32bitDump);
+            return script;
+        }
+
+        // Launches the debugger, which automatically executes a script and stores the output into a file
+        public static void LaunchDebugger(string script, string outFile, bool showProgress = false)
+        {
+            LogProgress progress = showProgress ? new LogProgress() : null;
+
+            // Set the path of the temporary script file
             string scriptFile = Path.Combine(Path.GetTempPath(), "WinDbgScript.txt");
 
-            // Set the path of the output file
-            using (StreamWriter stream = new StreamWriter(scriptFile))
-                stream.WriteLine(script.Replace("[LOG_FILE]", outFile));
+            // Replace special marks in the original script
+            script = PreprocessScript(script, outFile, progress);
 
-            // Remove the output file from previous executions
+            // Remove old files
+            File.Delete(scriptFile);
             File.Delete(outFile);
+
+            // Create the script file
+            using (StreamWriter stream = new StreamWriter(scriptFile))
+                stream.WriteLine(script);
 
             // Start the debugger
             string arguments = string.Format(@"-y ""{0};srv*{1}*http://msdl.microsoft.com/download/symbols"" -z ""{2}"" -c ""$$><{3};q""",
@@ -115,19 +148,32 @@ namespace DumpReport
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden // WinDBG will only hide the main window
             };
-            using (Process process = Process.Start(psi))
+
+            Process process = new Process();
+            process.StartInfo = psi;
+            if (!process.Start())
+                throw new Exception("The debugger could not be launched.");
+            Task<bool> task = LaunchDebuggerAsync(process);
+            while (!task.IsCompleted)
             {
-                bool finished = process.WaitForExit(config.DbgTimeout * 60 * 1000);
-
-                // Remove the temporary script file
-                File.Delete(scriptFile);
-
-                if (!finished)
-                {
-                    process.Kill();
-                    throw new Exception("The debugger took too long to execute.");
-                }
+                task.Wait(500);
+                if (showProgress)
+                    progress.ShowLogProgress();
             }
+            bool exited = task.Result;
+
+            File.Delete(scriptFile);
+
+            if (!exited)
+            {
+                process.Kill();
+                throw new Exception(String.Format("Execution has been cancelled after {0} minutes.", config.DbgTimeout));
+            }
+            if (process.ExitCode != 0)
+                throw new Exception("The debugger did not finish properly.");
+
+            if (showProgress)
+                progress.DeleteProgressFile();
 
             // Check that the output log has been generated
             if (!File.Exists(outFile))
@@ -175,7 +221,7 @@ namespace DumpReport
             exrLogFile = Path.ChangeExtension(exrLogFile, ".exr.log"); // Store the output of the exception record script in a separate file
             File.Delete(exrLogFile); // Delete previous logs
 
-            WriteConsole("Getting exception record...");
+            WriteConsole("Getting exception record...", true);
 
             string script = logManager.GetExceptionRecordScript();
             if (script != null)
@@ -191,14 +237,35 @@ namespace DumpReport
 
         public static void ShowError(string msg)
         {
-            Console.WriteLine(msg);
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("\n" + msg);
+            Console.ResetColor();
             report.WriteError(msg);
         }
 
-        public static void WriteConsole(string msg)
+        public static void WriteTitle()
         {
             if (config.QuietMode) return;
-            Console.WriteLine(msg);
+            Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            Version version = assembly.GetName().Version;
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine(String.Format("{0} {1}.{2}", Assembly.GetCallingAssembly().GetName().Name,
+                version.Major, version.Minor));
+            Console.ResetColor();
+        }
+
+        public static void WriteConsole(string msg, bool sameLine = false)
+        {
+            if (config.QuietMode) return;
+            if (sameLine)
+            {
+                string blank = String.Empty;
+                blank = blank.PadLeft(Console.WindowWidth - 1, ' ');
+                Console.Write("\r" + blank); // Clean the line before writing
+                Console.Write("\r" + msg);
+            }
+            else
+                Console.WriteLine(msg);
         }
     }
 }

@@ -22,7 +22,7 @@ namespace DumpReport
         public string module;
         public string frame;
         public UInt64 address;
-        public int    threadNum;
+        public int threadNum;
     }
 
     /// <summary>
@@ -32,16 +32,16 @@ namespace DumpReport
     class LogManager
     {
         // Sections in the debugger's output file
-        public const string SECTION_MARK     = ">>> ";
-        public const string TARGET_INFO      = ">>> TARGET INFO";
-        public const string MANAGED_THREADS  = ">>> MANAGED THREADS";
-        public const string MANAGED_STACKS   = ">>> MANAGED STACKS";
-        public const string EXCEPTION_INFO   = ">>> EXCEPTION INFO";
-        public const string HEAP             = ">>> HEAP";
-        public const string INSTRUCT_PTRS    = ">>> INSTRUCTION POINTERS";
-        public const string THREAD_STACKS    = ">>> THREAD STACKS";
-        public const string LOADED_MODULES   = ">>> LOADED MODULES";
-        public const string END_OF_LOG       = ">>> END OF LOG";
+        public const string SECTION_MARK = ">>> ";
+        public const string TARGET_INFO = ">>> TARGET INFO";
+        public const string MANAGED_THREADS = ">>> MANAGED THREADS";
+        public const string MANAGED_STACKS = ">>> MANAGED STACKS";
+        public const string EXCEPTION_INFO = ">>> EXCEPTION INFO";
+        public const string HEAP = ">>> HEAP";
+        public const string INSTRUCT_PTRS = ">>> INSTRUCTION POINTERS";
+        public const string THREAD_STACKS = ">>> THREAD STACKS";
+        public const string LOADED_MODULES = ">>> LOADED MODULES";
+        public const string END_OF_LOG = ">>> END OF LOG";
 
         // Parser objects
         DumpInfoParser dumpInfoParser = new DumpInfoParser();
@@ -119,7 +119,7 @@ namespace DumpReport
             }
             catch (Exception ex)
             {
-                Program.ShowError(ex.Message);
+                throw new Exception(String.Format("{0} {1}", "Cannot read log file:", ex.Message));
             }
         }
 
@@ -131,11 +131,10 @@ namespace DumpReport
                 foreach (Parser parser in m_parsers.Values)
                     if (parser != null) parser.Parse();
                 CheckParserInfo();
-                CombineParserInfo();
             }
             catch (Exception ex)
             {
-                Program.ShowError(ex.Message);
+                throw new Exception(String.Format("{0} {1}", "Cannot parse log file:", ex.Message));
             }
             if (config.LogClean)
                 File.Delete(config.LogFile);
@@ -144,25 +143,29 @@ namespace DumpReport
         // Checks the extracted info and notifies possible anomalies
         void CheckParserInfo()
         {
-            // Check if the environment variables could be retrieved
-            if (targetInfoParser.Environment.Keys.Count == 0)
-                notes.Add("The environment variables could not be retrieved.");
-
             // Check if some PDB files have been loaded from the expected location
             bool PdbLoadedFromPath = false;
-                foreach (ModuleInfo module in moduleParser.Modules)
-                    if (module.pdbPath.ToUpper().Contains(config.PdbFolder.ToUpper()))
-                        PdbLoadedFromPath = true;
+            foreach (ModuleInfo module in moduleParser.Modules)
+                if (module.pdbPath.ToUpper().Contains(config.PdbFolder.ToUpper()))
+                    PdbLoadedFromPath = true;
             if (!PdbLoadedFromPath)
                 notes.Add("No PDBs loaded from " + config.PdbFolder);
         }
 
         // Complements the information of some Parsers with data from other Parsers
-        void CombineParserInfo()
+        public void CombineParserInfo()
         {
-            // Add managed information to the thread list
+            // Assign the call stack of the exception thread, if present.
+            // In some cases, the exception thread as it appears in section 'THREAD STACKS' may not provide a meaningful 
+            // call stack (e.g, may show 'NtGetContextThread' if the dump was created by calling 'MiniDumpWriteDump')
+            ThreadInfo exceptionThread = excepInfoParser.GetExceptionThread();
+            if (exceptionThread != null && exceptionThread.threadNum < threadParser.Threads.Count)
+                threadParser.Threads[exceptionThread.threadNum].stack = exceptionThread.stack;
+
+            // Add managed frames to the main thread list
             foreach (ManagedStackInfo stack in managedStacksParser.Stacks)
                 threadParser.AddManagedInfo(stack.threadNum, stack);
+
             // Add instruction pointers to the thread list
             threadParser.SetInstructionPointers(instPtrParser.InstPtrs);
         }
@@ -175,11 +178,20 @@ namespace DumpReport
                 heapParser.GetExceptionInfo(exceptionInfo, threadParser);
                 return true;
             }
+
             excepInfoParser.GetExceptionInfo(exceptionInfo, threadParser);
+
+            // If the exception is managed, update the current exception info
+            int managedFaultThreadNum = managedThreadsParser.GetFaultThreadNum();
+            if (managedFaultThreadNum >= 0 && (excepInfoParser.IsClrException() || exceptionInfo.description == null))
+            {
+                exceptionInfo.threadNum = managedFaultThreadNum;
+                exceptionInfo.description = managedThreadsParser.GetThread(managedFaultThreadNum).exceptionDescription;
+            }
+
             if (exceptionInfo.threadNum < 0)
             {
                 // We don't have the exception details but we can at least try to identify the faulting thread
-                exceptionInfo.threadNum = managedThreadsParser.GetFaultingThread(); // Look in the managed threads
                 if (exceptionInfo.threadNum < 0) // Look for keywords in the call stacks
                     exceptionInfo.threadNum = threadParser.GuessFaultingThread();
             }
@@ -210,11 +222,12 @@ namespace DumpReport
         // Writes all information to the report
         public void WriteReport()
         {
-            Program.WriteConsole("Creating report...");
+            Program.WriteConsole("Creating report...", true);
             WriteHeader();
             WriteExceptionInfo();
             WriteAllThreads();
             report.WriteJavascript(threadParser.GetNumThreads());
+            Program.WriteConsole("\rReport created in " + config.ReportFile);
         }
 
         // Writes the top part of the report

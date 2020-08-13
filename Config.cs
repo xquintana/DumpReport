@@ -11,24 +11,24 @@ namespace DumpReport
     {
         public string DbgExe64 { get; set; }        // Full path of the 64-bit version debugger
         public string DbgExe32 { get; set; }        // Full path of the 32-bit version debugger
-        public Int32  DbgTimeout { get; set; }      // Maximum number of minutes to wait for the debugger to finish
+        public Int32 DbgTimeout { get; set; }       // Maximum number of minutes to wait for the debugger to finish
         public string StyleFile { get; set; }       // Full path of a custom CSS file to use
         public string ReportFile { get; set; }      // Full path of the report to be created
-        public bool   ReportShow { get; set; }      // If true, the report will be displayed automatically in the default browser
-        public bool   QuietMode { get; set; }       // If true. the application will not show progress messages in the console
+        public bool ReportShow { get; set; }        // If true, the report will be displayed automatically in the default browser
+        public bool QuietMode { get; set; }         // If true. the application will not show progress messages in the console
         public string SymbolCache { get; set; }     // Folder to use as the debugger's symbol cache
         public string DumpFile { get; set; }        // Full path of the DMP file
         public string PdbFolder { get; set; }       // Folder where the PDBs are located
         public string LogFile { get; set; }         // Full path of the debugger's output file
         public string LogFolder { get; set; }       // Folder where the debugger's output file is stored
-        public bool   LogClean { get; set; }        // If true, log files are deleted after execution
+        public bool LogClean { get; set; }          // If true, log files are deleted after execution
         public string SourceCodeRoot { get; set; }  // Specifies a root folder for the source files
 
         public Config()
         {
             DbgExe64 = String.Empty;
             DbgExe32 = String.Empty;
-            DbgTimeout = 10;
+            DbgTimeout = 60;
             StyleFile = String.Empty;
             ReportFile = "DumpReport.html";
             ReportShow = false;
@@ -171,7 +171,7 @@ namespace DumpReport
             }
             catch (ArgumentException ex)
             {
-                throw new ArgumentException(ex.Message + "\r\nPlease type 'DumpReport' for help." );
+                throw new ArgumentException(ex.Message + "\r\nPlease type 'DumpReport' for help.");
             }
         }
 
@@ -183,8 +183,20 @@ namespace DumpReport
             return args[++idx];
         }
 
+        public void CheckDebugger(string dbgFullPath, string bitness)
+        {
+            if (dbgFullPath.Length > 0)
+            {
+                if (!File.Exists(dbgFullPath))
+                    throw new ArgumentException(String.Format("{0} debugger not found: {1}", bitness, dbgFullPath));
+                string debugger = Path.GetFileName(dbgFullPath).ToLower();
+                if (debugger != "windbg.exe" && debugger != "cdb.exe")
+                    throw new ArgumentException(String.Format("Wrong {0} debugger ('{1}'). Only 'WinDBG.exe' or 'CDB.exe' are supported.", bitness, debugger));
+            }
+        }
+
         // Checks that the files and folders exist and sets all paths to absolute paths.
-        public void CheckParams()
+        public void CheckArguments()
         {
             if (!File.Exists(DumpFile))
                 throw new ArgumentException("Dump file not found: " + DumpFile);
@@ -192,10 +204,8 @@ namespace DumpReport
                 throw new ArgumentException("No debuggers specified in the configuration file.\r\nPlease type 'DumpReport /CONFIG HELP' for help.");
             if (!Environment.Is64BitOperatingSystem && DbgExe32.Length == 0)
                 throw new Exception("The attribute 'exe32' must be set on 32-bit computers.");
-            if (DbgExe64.Length > 0 && !File.Exists(DbgExe64))
-                throw new ArgumentException("64-bit debugger not found: " + DbgExe64);
-            if (DbgExe32.Length > 0 && !File.Exists(DbgExe32))
-                throw new ArgumentException("32-bit debugger not found: " + DbgExe32);
+            CheckDebugger(DbgExe64, "64-bit");
+            CheckDebugger(DbgExe32, "32-bit");
             if (PdbFolder.Length > 0 && !Directory.Exists(PdbFolder))
                 throw new ArgumentException("PDB folder not found: " + PdbFolder);
             if (PdbFolder.Length == 0)
@@ -232,16 +242,9 @@ namespace DumpReport
             Console.ResetColor();
         }
 
-        // Prints the application title to the console
-        static void PrintTitle()
-        {
-            PrintColor("\n" + Resources.appTitle, ConsoleColor.Yellow);
-        }
-
         // Prints the application usage to the console
         static bool PrintAppHelp()
         {
-            PrintTitle();
             Console.WriteLine(string.Format(Resources.appHelp, Path.GetFileName(Program.configFile)));
             return true;
         }
@@ -249,7 +252,6 @@ namespace DumpReport
         // Prints the configuration file syntax to the console
         static bool PrintConfigHelp()
         {
-            PrintTitle();
             Console.WriteLine(string.Format(Resources.xmlHelpIntro, Path.GetFileName(Program.configFile)));
             PrintColor("\r\nSample:\r\n", ConsoleColor.White);
             Console.WriteLine(Resources.xml);
@@ -261,7 +263,6 @@ namespace DumpReport
         // Prints the CSS file syntax to the console
         static bool PrintStyleHelp()
         {
-            PrintTitle();
             Console.WriteLine(Resources.cssHelp);
             return true;
         }

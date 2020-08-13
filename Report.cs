@@ -64,7 +64,7 @@ namespace DumpReport
             WriteHTMLHeader();
             stream.WriteLine("<body>");
             stream.WriteLine("<h1>Dump Report</h1><br>");
-            WriteValue("Report Timestamp", DateTime.Now.ToString());
+            WriteValue("Report Creation Time", Utils.GetUtcTimeFromLocalTime(DateTime.Now));
             if (config.DumpFile != null)
                 WriteValue("Dump File", config.DumpFile);
         }
@@ -138,6 +138,8 @@ namespace DumpReport
         {
             if (stream == null) return;
 
+            WriteValue("Dump Creation Time", dumpInfo.CreationTime);
+
             if (dumpInfo.DumpBitness != null)
             {
                 string dumpType = dumpInfo.DumpBitness;
@@ -149,7 +151,7 @@ namespace DumpReport
             if (dumpInfo.SosLoaded && dumpInfo.ClrVersion != null && dumpInfo.ClrVersion.Length > 0)
                 WriteValue("CLR Version", dumpInfo.ClrVersion);
             else
-                WriteValue("CLR Version", "None (SOS extension not loaded)");
+                WriteValue("CLR Version", "Not found");
         }
 
         public void WriteTargetInfo(TargetInfoParser targetInfo)
@@ -182,10 +184,10 @@ namespace DumpReport
         {
             if (stream == null) return;
             Table table = new Table("report-table");
-            table.AddHeader(new string[] { "Start Address", "End Address", "Module Name", "Timestamp", "Time",
+            table.AddHeader(new string[] { "Start Address", "End Address", "Module Name", "Timestamp", "UTC Time",
                 "Path", "File Version", "Product Version", "Description", "PDB status", "PDB Path" });
             foreach (ModuleInfo module in modules)
-                table.AddRow(new string[] { module.startAddr.TrimStart('0'), module.endAddr.TrimStart('0'), module.moduleName, module.timestamp, Utils.TimestampToLocalDateTime(module.timestamp),
+                table.AddRow(new string[] { module.startAddr.TrimStart('0'), module.endAddr.TrimStart('0'), module.moduleName, module.timestamp, Utils.GetUtcTimeFromTimestamp(module.timestamp),
                     module.imagePath, module.fileVersion, module.productVersion, module.fileDescription, module.pdbStatus, module.pdbPath }, "td");
             InsertToggleContent("Loaded Modules", table.Serialize());
         }

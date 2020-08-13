@@ -2,7 +2,7 @@
 
 _DumpReport_ is a console application that creates a report as an HTML file from a Windows user-mode dump, using WinDBG or CDB debuggers.  
 It shows the call stack of all threads, the exception details (if any), the modules loaded in the process as well as the environment details of the target machine.  
-Since it's a command-line application, it can also be called by a script so, for example, the report could be sent by e-mail or published on the intranet.  
+Since it's a command-line application, it can also be called by a script so, for example, the report can be sent by e-mail or published on the intranet.  
 Although it's been mainly designed to analyze crash dumps of Windows applications developed in C++ (managed and/or unmanaged), it can also be used to read hang dumps or .Net dumps.  
 
 
@@ -18,7 +18,7 @@ The report has the following appearance:
 ![Report](/screenshots/report.png)
 
 It begins with the time and date the report was generated.  
-Then follow details about the dump itself (path and bitness), the process and the environment of the target machine:
+Then follow details about the dump file (creation time, path and bitness), the process and the environment of the target machine:
 
 * __CLR Version:__ Version of the loaded .Net framework  (only for dumps with managed code).
 * __Command Line:__ Shows the full command line of the process being debugged, including the arguments.
@@ -45,13 +45,13 @@ The last section shows all threads grouped by call stack.
 They appear collapsed by default. Click on the '+' button to display a particular call stack, or use the buttons 'Expand All' and 'Collapse All'.
 
 Optionally, frames with source files under a specific root folder can show emphasized. 
-If we are the developers of the application being debugged, this can be useful to easily distinguish the frames that belong to our application.
+This can be useful to easily distinguish the frames that belong to our own application.
 
 
-## Command Line
+## Command-line arguments
 
-Execute _DumpReport_ without parameters to display the help.  
-Parameters are passed in the form '__/PARAMETER value__'
+Execute _DumpReport_ without arguments to display the help.  
+Arguments are passed in the form '__/ARGUMENT value__'
 
 Usage:
 
@@ -69,21 +69,21 @@ Example:
 
     DumpReport /DUMPFILE "C:\dump\crash.dmp" /PDBFOLDER "C:\dump" /SHOWREPORT 1
 
-If the dump file is the only parameter, the call can be simplified:
+If the dump file is the only argument, the call can be simplified as follows:
 
 	DumpReport "C:\dump\crash.dmp"
 
-It is also possible to drag and drop the dump directly onto the executable.
+In this case, it is also possible to drag and drop the dump directly onto the executable.
 
 Any value containing spaces must be enclosed in double quotes.  
 
 Providing the PDB files is not necessary but allows to show the source files and line numbers in the call stack traces.
 
-The location of the debbuggers to use and other options must be specified in the XML configuration file, explained in the next section.
+The location of the debuggers to use and other options must be specified in the XML configuration file, as explained in the next section.
 
-Errors are displayed in the console window and also added to the report, provided that the report file could be created.
+Errors are displayed in the console window and also added to the report, provided that at least the report file could be created.
 
-Please note that the debugger may take several minutes to process the dump, especially if it has to download PDBs.
+Please note that the debugger may take several minutes to process the dump, especially if PDB files are to be downloaded.
 
 
 ## Configuration file
@@ -96,9 +96,9 @@ This file can be created by typing:
 It must be edited in order to specify the location of the debuggers. The rest of the parameters can be left as default.  
 Some parameters like the PDB folder or the output file name can be overriden by command-line.  
 
-### Xml Nodes
+### Xml nodes
 
-The nodes in the configuration file are:
+The nodes and attributes in the configuration file are:
 
 * __Config:__ Main node.
 * __Debugger:__  Supported debuggers are WinDbg.exe and CDB.exe.
@@ -116,7 +116,7 @@ The nodes in the configuration file are:
 	* __folder:__  Folder where the debugger log files will be created. If not specified, log files are created in the same location as the dump file. The name of the log files is the name of the dump file appended with '.log'
 	* __clean:__   Indicates whether the log files should be deleted after being processed.
 * __SymbolCache:__
-	* __folder:__  Folder to use as symbol cache. If not specified, the debugger will use its default symbol cache (e.g: C:\ProgramData\dbg) 
+	* __folder:__  Folder to use as symbol cache. If not specified, the debugger will use its default symbol cache (e.g, "C:\ProgramData\dbg") 
 * __SourceCodeRoot:__
 	* __folder:__  The report will emphasize the frames whose source file's path contains this folder.  
 
@@ -126,6 +126,19 @@ This information can be displayed in the console by typing:
 
 	DumpReport /CONFIG HELP
 
+## Quick set-up
+
+These are the minimum steps to generate a report from a crash dump of your application:
+* Create a folder and copy there the DMP file, the PDB file(s) of your application, and the DumpReport executable.
+* Open a console window in that folder and type: `DumpReport /CONFIG CREATE`
+* Open the newly created file _DumpReportCfg.xml_ in a text editor.
+* In case of a 64-bit dump, fill in the field _exe64_ with the full path of your WinDBG or CDB 64-bit executable.
+* In case of a 32-bit dump, fill in the field _exe32_ with the full path of your WinDBG or CDB 32-bit executable.
+* Save the XML and close the editor.
+* To generate the report, type `DumpReport your_dump_file.dmp` of drag'n'drop the DMP file onto _DumpReport.exe_.
+* After a while (it could take up to a few minutes depending on the dump) an HTML report will be created in the same folder (it should also open in your default browser automatically).
+
+From here on, you can customize the report generation as described in other sections.
 
 ## About dump bitness
 
@@ -133,7 +146,7 @@ Dumps of 32-bit processes running on 64-bit computers should be captured using t
 Otherwise, the resulting report may be incomplete or inaccurate.
 
 If both 32-bit and 64-bit debuggers are set, the application chooses the one to use according to the dump bitness.  
-If only the 64-bit debugger is set, 32-bit dumps are processed by automatically switching the debugger's processor mode to 32bit.  
+If only the 64-bit debugger is set, 32-bit dumps are processed by automatically switching the debugger's processor mode to 32-bit.  
 
 
 ## Exception detection
@@ -143,7 +156,7 @@ In this case, the application tries to retrieve a more meaningful exception reco
 If the proper exception record cannot be found out, the faulting thread is deduced by searching for specific functions in the call stacks, such as '_KiUserExceptionDispatcher_' or '_RtlDispatchException_'.  
 
 
-## Code Structure
+## Code structure
 
 This application has been developed in C# (Visual Studio 2017).  
 The main modules are:  
@@ -153,22 +166,25 @@ The main modules are:
 * __Parser.__ A _Parser_ object parses a section of the debugger's log file and stores the extracted data. The base class implements a method to collect the lines to parse, and declares an abstract method to parse them. Each derived class knows how to parse a specific section in the log. For example, the _ModuleParser_ is in charge of parsing the section where the loaded modules are listed.
 * __Report.__ Encapsulates methods to write HTML code from the information stored in the _Parser_ objects.
 * __LogManager.__ Reads the debugger's output file and distributes the lines of each section among the corresponding _Parser_ objects. Once all lines are assigned, it makes the _Parser_ objects do their job. Finally, it passes the extracted information to the _Report_ object in order to fill in the report.
-* __Resources.__ Contains resources such as the help text to show in the console window, javascript and CSS code used by the report, as well as the debugger scripts.
+* __Resources.__ Contains resources such as the help text to show in the console window, JavaScript and CSS code used by the report, as well as the debugger scripts.
 
 
-## Main Debugger Script
+## Main debugger script
 
 This section shows the main debugger script, used to retrieve information about the target machine environment, threads and loaded modules.
 It can be found in the file _Resources.cs_, among other auxiliary scripts.
 
-	.logopen /u "[LOG_FILE]"
+	.logopen /u "{LOG_FILE}"
 	||
+	{PROGRESS_STEP}
 	.lines -e
 	.foreach (module {lm1m} ) { .if ($sicmp(""${module}"",""wow64"") == 0) { .load soswow64; .echo WOW64 found; .effmach x86;  } }
 	.effmach
+	.time
 	.cordll -ve -u -l
 	.chain
 	.echo > !eeversion
+	{PROGRESS_STEP}
 	!eeversion
 	.echo >>> TARGET INFO
 	!envvar COMPUTERNAME
@@ -179,28 +195,40 @@ It can be found in the file _Resources.cs_, among other auxiliary scripts.
 	vertarget
 	!peb
 	.echo >>> MANAGED THREADS
+	{PROGRESS_STEP}
 	!Threads
 	.echo >>> MANAGED STACKS
 	.block { ~* e !clrstack }
 	.echo >>> EXCEPTION INFO
+	{PROGRESS_STEP}
 	.exr -1
-	.echo EXCEPTION THREAD:
+	.echo EXCEPTION CONTEXT RECORD:
+	.ecxr
+	.echo EXCEPTION CALL STACK:
 	~#
+	kv n
 	.echo >>> HEAP
+	{PROGRESS_STEP}
 	!heap
 	.echo >>> INSTRUCTION POINTERS
-	.block { ~* e ? [INSTRUCT_PTR] }
+	{PROGRESS_STEP}
+	.block { ~* e ? {INSTRUCT_PTR} }
 	.echo >>> THREAD STACKS
+	{PROGRESS_STEP}
 	~* kv n
 	.echo >>> LOADED MODULES
+	{PROGRESS_STEP}
 	lmov
+	{PROGRESS_STEP}
 	.echo >>> END OF LOG
 	.logclose
 
 
 __Notes:__  
 
-* [LOG_FILE] is replaced with the debugger's log file name.  
+* {LOG_FILE} is replaced with the debugger's log file name.
+* {PROGRESS_STEP} is replaced with a command that allows to keep track of the progress.
+* {INSTRUCT_PTR} is replaced with the Instruction Pointer register's name (RIP or EIP, depending on the dump bitness).
 * The effective machine is changed to x86 if the module _wow64.dll_ is found. This only applies when debugging a 64-bit dump of a 32-bit process.  
 * '_echo_' commands are used to define sections and simplify the parsing of the log.  
 
@@ -223,10 +251,10 @@ You can show additional information in the report by adding commands to the main
 
 	`m_parsers.Add(MY_SECTION, myParser);`  	
 
-* Add a method to the _Report_ class (e.g: `Report.WriteMySection(...)`) with the data to show as input parameter. There you must format the input data as HTML and write it to the report using the _stream_ member variable.
+* Add a method to the _Report_ class (e.g: `Report.WriteMySection(...)`) with the data to show as input argument. There you must format the input data as HTML and write it to the report using the _stream_ member variable.
 * Finally, in the `LogManager.WriteReport()` method, call `report.WriteSectionTitle()` with the title of the new section and `report.WriteMySection()` passing the data to display.
 
-## Custom Report Style
+## Custom report style
 
 The style of the report is defined by a default CSS code embedded into the HTML file.  
 However, it is possible to embed a custom CSS file instead.  
@@ -242,7 +270,7 @@ The styles that can be modified are:
 * __toggle-header:__ Auxiliary table that contains a toggle button and a label that describes an area that can be expanded or collapsed.
 * __report-table:__  Style for tables showing thread stacks, loaded modules or environment variables. By default, a striped style is used.
 * __sourcecode-frame:__ Stack frame associated to the source code root.
-* __thread-id:__     Style for the thread identifier and intruction pointer.
+* __thread-id:__     Style for the thread identifier and instruction pointer.
 
 This information can be displayed in the console by typing:
 
@@ -255,9 +283,8 @@ Run the following command to create a sample CSS file (_style.css_):
 ## Requirements
 
 * Windows 7 or above.
-* .Net framework v4.0 or above.
+* .Net framework v4.5 or above.
 * WinDBG or CDB debugger. It can be installed from the component 'Debugging Tools for Windows' of the Windows SDK. Tested with version 10.  
-
 
 ## Optional debugger extensions
 
@@ -271,3 +298,13 @@ The executable can be downloaded from [here](/Download/DumpReport.zip).
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+
+## History
+
+__1.1__
+* Added progress messages.
+* The timestamps of the loaded modules are also expressed in UTC time.
+
+__1.0__
+* First version
+

@@ -48,7 +48,7 @@ namespace DumpReport
         public string domain;
         public string lockCount;
         public string apt;
-        public string exception;
+        public string exceptionDescription;
     }
     /// <summary>
     /// Stores information about a call stack frame.
@@ -127,9 +127,10 @@ namespace DumpReport
     class DumpInfoParser : Parser
     {
         public string DumpBitness { get; set; }
-        public bool   Wow64Found { get; set; }
-        public bool   SosLoaded { get; set; }
+        public bool Wow64Found { get; set; }
+        public bool SosLoaded { get; set; }
         public string ClrVersion { get; set; }
+        public string CreationTime { get; set; }
 
         public override void Parse()
         {
@@ -149,14 +150,22 @@ namespace DumpReport
                     Wow64Found = true;
                 else if (lines[idx].Contains("Automatically loaded SOS Extension"))
                     SosLoaded = true;
-                else if (lines[idx].Contains("eeversion"))
+                else if (lines[idx].Contains("Debug session time:"))
                 {
-                    while (++idx < lines.Count && lines[idx].Contains("*** ")); //skip noise
-                    pattern = @"(?<clr_ver>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)";
+                    pattern = @"Debug session time:\s(?<creation_time>.+)";
                     matches = Regex.Matches(lines[idx], pattern);
                     if (matches.Count == 1)
-                        ClrVersion = matches[0].Groups["clr_ver"].Value;
-                    else ClrVersion = lines[idx];
+                        CreationTime = Utils.GetDumpUtcTime(matches[0].Groups["creation_time"].Value);
+                }
+                else if (lines[idx].Contains("eeversion"))
+                {
+                    while (++idx < lines.Count)
+                    {
+                        pattern = @"(?<clr_ver>[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)";
+                        matches = Regex.Matches(lines[idx], pattern);
+                        if (matches.Count == 1)
+                            ClrVersion = matches[0].Groups["clr_ver"].Value;
+                    }
                 }
             }
         }
@@ -183,7 +192,7 @@ namespace DumpReport
                 if (lines[idx].Contains("TARGET:"))
                 {
                     OsInfo = lines[++idx].Split(new string[] { "Free x" }, StringSplitOptions.None)[0];
-                    while (++idx < lines.Count && !lines[idx].Contains("Debug session time"));
+                    while (++idx < lines.Count && !lines[idx].Contains("Debug session time")) ;
                 }
                 else if (lines[idx].Contains("COMPUTERNAME = "))
                 {
@@ -241,47 +250,78 @@ namespace DumpReport
     /// </summary>
     class ManagedThreadsParser : Parser
     {
-        List<ManagedThreadInfo> threads = new List<ManagedThreadInfo>();
+        public List<ManagedThreadInfo> Threads { get; set; }
 
         public override void Parse()
         {
             Debug.Assert(lines.Count > 0);
             ManagedThreadInfo managedThread = null;
+            Threads = new List<ManagedThreadInfo>();
+
             foreach (string line in lines)
             {
-                pattern = @"(?<thread_num>[0-9]+)\s+(?<thread_num_man>[0-9]+)\s+(?<osid>\w+)\s+(?<thread_obj>\w+)\s+(?<state>\w+)\s+(?<gc_mode>\w+)\s+(?<gc_alloc_ctx>[\w,:]+)\s+(?<domain>\w+)\s+(?<lock_count>\w+)\s+(?<apt>\w+)\s+(?<exception>.+)";
+                pattern = @"(?<thread_num>[0-9]+)\s+(?<thread_num_man>[0-9]+)\s+(?<osid>\w+)\s+(?<thread_obj>\w+)\s+(?<state>\w+)\s+(?<gc_mode>\w+)\s+(?<gc_alloc_ctx>[\w,:]+)\s+(?<domain>\w+)\s+(?<lock_count>\w+)\s+(?<apt>\w+)\s+(?<exception>.*)";
                 matches = Regex.Matches(line, pattern);
 
                 if (matches.Count == 1)
                 {
                     managedThread = new ManagedThreadInfo
                     {
-                        threadNum        = Convert.ToInt32(matches[0].Groups["thread_num"].Value),
+                        threadNum = Convert.ToInt32(matches[0].Groups["thread_num"].Value),
                         threadNumManaged = Convert.ToInt32(matches[0].Groups["thread_num_man"].Value),
-                        threadId         = matches[0].Groups["osid"].Value,
-                        threadObj        = matches[0].Groups["thread_obj"].Value,
-                        state            = matches[0].Groups["state"].Value,
-                        gcMode           = matches[0].Groups["gc_mode"].Value,
-                        gcAllocCtx       = matches[0].Groups["gc_alloc_ctx"].Value,
-                        domain           = matches[0].Groups["domain"].Value,
-                        lockCount        = matches[0].Groups["lock_count"].Value,
-                        apt              = matches[0].Groups["apt"].Value,
-                        exception        = matches[0].Groups["exception"].Value
+                        threadId = matches[0].Groups["osid"].Value,
+                        threadObj = matches[0].Groups["thread_obj"].Value,
+                        state = matches[0].Groups["state"].Value,
+                        gcMode = matches[0].Groups["gc_mode"].Value,
+                        gcAllocCtx = matches[0].Groups["gc_alloc_ctx"].Value,
+                        domain = matches[0].Groups["domain"].Value,
+                        lockCount = matches[0].Groups["lock_count"].Value,
+                        apt = matches[0].Groups["apt"].Value,
+                        exceptionDescription = CleanExceptionDescription(matches[0].Groups["exception"].Value)
                     };
-                    threads.Add(managedThread);
+                    Threads.Add(managedThread);
                 }
             }
         }
 
-        public int GetFaultingThread()
+        // Managed exceptions can be reported with an address at the end of the description.
+        // This methods removes this address if it exists (e.g, "System.ArgumentException 000001ea85257290").
+        string CleanExceptionDescription(string description)
         {
-            foreach (ManagedThreadInfo thread in threads)
+            string[] parts = description.Split(' ');
+            if (parts.Length > 1)
             {
-                matches = Regex.Matches(thread.exception, "exception", RegexOptions.IgnoreCase);
+                // check whether it's a valid hexadecimal value.
+                try
+                {
+                    Utils.StrHexToUInt64(parts[parts.Length - 1]);
+                    return String.Join("", parts, 0, parts.Length - 1);
+                }
+                catch (Exception) { }
+            }
+            return description;
+        }
+
+        public int GetFaultThreadNum()
+        {
+            foreach (ManagedThreadInfo thread in Threads)
+            {
+                matches = Regex.Matches(thread.exceptionDescription, "exception", RegexOptions.IgnoreCase);
                 if (matches.Count == 1)
                     return Convert.ToInt32(thread.threadNum);
             }
             return -1;
+        }
+
+        // The thread number relates to the total amount of threads (native and managed)
+        public ManagedThreadInfo GetThread(int threadNum)
+        {
+            foreach (ManagedThreadInfo thread in Threads)
+            {
+                if (thread.threadNum == threadNum)
+                    return thread;
+            }
+            return null;
         }
     }
 
@@ -380,7 +420,9 @@ namespace DumpReport
         string frame;
         string description;
         string module;
-        int    threadNum;
+        int threadNum;
+        bool isClrException;
+        ThreadInfo exceptionThread; // The thread that generated the exception       
 
         public override void Parse()
         {
@@ -391,7 +433,7 @@ namespace DumpReport
             threadNum = -1;
 
             Debug.Assert(lines.Count > 0);
-            for(int idx=0; idx < lines.Count; idx++)
+            for (int idx = 0; idx < lines.Count; idx++)
             {
                 if (lines[idx].Contains("ExceptionAddress:"))
                 {
@@ -425,18 +467,33 @@ namespace DumpReport
                     pattern = @"ExceptionCode: (?<exception>.+)";
                     matches = Regex.Matches(lines[idx], pattern);
                     if (matches.Count == 1)
+                    {
                         description = matches[0].Groups["exception"].Value;
+                        if (description.Contains("CLR exception"))
+                            isClrException = true;
+                    }
                 }
-                else if (lines[idx].Contains("EXCEPTION THREAD:"))
+                else if (lines[idx].Contains("EXCEPTION CALL STACK:"))
                 {
-                    idx++;
-                    pattern = @"(?<thread_num>[0-9]+)\s+Id:\s";
-                    matches = Regex.Matches(lines[idx], pattern);
-                    if (matches.Count == 1)
-                        threadNum = Convert.ToInt32(matches[0].Groups["thread_num"].Value);
+                    ThreadParser threadParser = new ThreadParser(); // Used to extract the exception thread's call stack
+                    while (++idx < lines.Count)
+                        threadParser.AddLine(lines[idx]);
+
+                    threadParser.Parse();
+                    if (threadParser.Threads.Count > 0)
+                    {
+                        exceptionThread = threadParser.Threads[0];
+                        threadNum = exceptionThread.threadNum;
+                    }
                 }
+                else if (lines[idx].Contains("Unable to get exception context"))
+                    return; // The exception info is not useful.
             }
         }
+
+        public ThreadInfo GetExceptionThread() { return exceptionThread; }
+
+        public bool IsClrException() { return isClrException; }
 
         public void GetExceptionInfo(ExceptionInfo exceptionInfo, ThreadParser threadParser)
         {
@@ -449,8 +506,8 @@ namespace DumpReport
                 FrameInfo frameInfo = threadParser.GetFrameInfoByAddress(threadNum, address);
                 if (frameInfo != null)
                 {
-                    if (frame == null)  frame = frameInfo.function;
-                    if (module == null) module= frameInfo.module;
+                    if (frame == null) frame = frameInfo.function;
+                    if (module == null) module = frameInfo.module;
                 }
             }
             // Copy the internal info
@@ -484,7 +541,7 @@ namespace DumpReport
 
         string errorType; // The error type as reported by the debugger
         string errorDetails; // The report also adds a description to the error type
-        List<UInt64>  stack = new List<UInt64>();  // The stack reported by the !heap command
+        List<UInt64> stack = new List<UInt64>();  // The stack reported by the !heap command
 
         public override void Parse()
         {
@@ -526,7 +583,7 @@ namespace DumpReport
 
         public void GetExceptionInfo(ExceptionInfo exceptionInfo, ThreadParser threadParser)
         {
-            exceptionInfo.description = "Heap corruption (" + errorType + "). " + errorDetails.Replace(".",". ");
+            exceptionInfo.description = "Heap corruption (" + errorType + "). " + errorDetails.Replace(".", ". ");
 
             // Finds out the thread number that corresponds to the extracted call stack
             List<ThreadInfo> threads = threadParser.GetThreadsByStack(stack);
@@ -657,7 +714,7 @@ namespace DumpReport
                         FrameInfo frame = new FrameInfo
                         {
                             numFrame = numFrames++,
-                            childSP = matches[0].Groups["child"].Value.Replace("`",string.Empty),
+                            childSP = matches[0].Groups["child"].Value.Replace("`", string.Empty),
                             returnAddress = matches[0].Groups["return_addr"].Value.Replace("`", string.Empty),
                             argsToChild1 = matches[0].Groups["args_to_child1"].Value.Replace("`", string.Empty),
                             argsToChild2 = matches[0].Groups["args_to_child2"].Value.Replace("`", string.Empty),
@@ -679,6 +736,10 @@ namespace DumpReport
 
         void ParseCallSite(FrameInfo frame)
         {
+            // CDB adds this keyword for some managed frames.
+            // It is removed to make the call site look more similar to the one extracted with WinDBG.
+            frame.callSite = frame.callSite.Replace("<Module>", "");
+
             // Expected frame format: module!function [file @ line]
             // module and/or file info may be missing.
             if (frame.callSite.Contains("!"))
@@ -715,12 +776,12 @@ namespace DumpReport
                 return null;
             if (Utils.StrHexToUInt64(Threads[threadNum].instructPtr) == address)
                 return thread.stack[0];
-            for (int i=0; i < Threads[threadNum].stack.Count - 1; i++)
+            for (int i = 0; i < Threads[threadNum].stack.Count - 1; i++)
             {
                 if (thread.stack[i].inline == true)
                     continue;
                 if (Utils.StrHexToUInt64(thread.stack[i].returnAddress) == address)
-                    return thread.stack[i+1];
+                    return thread.stack[i + 1];
             }
             return null;
         }
@@ -812,7 +873,10 @@ namespace DumpReport
                     if ((Program.is32bitDump && Utils.SameStrAddress(managedFrame.instructPtr, frame.callSite)) ||
                         (!Program.is32bitDump && managedFrame.childSP == frame.childSP))
                     {
-                        frame.callSite = string.Format("(managed)!{0}", managedFrame.callSite);
+                        if (!managedFrame.callSite.Contains("!")) // If the managed frame does not contain a module name, add a default one
+                            frame.callSite = "(managed)!" + managedFrame.callSite;
+                        else
+                            frame.callSite = managedFrame.callSite;
                         ParseCallSite(frame);
                     }
                 }
@@ -824,7 +888,7 @@ namespace DumpReport
         {
             if (instPtrs.Count != Threads.Count)
                 return;
-            for (int i=0; i< Threads.Count; i++)
+            for (int i = 0; i < Threads.Count; i++)
                 Threads[i].instructPtr = instPtrs[i];
         }
 
@@ -878,13 +942,13 @@ namespace DumpReport
                         module = null; // irrelevant for debugging
                     else
                         module = new ModuleInfo()
-                    {
-                        startAddr = matches[0].Groups["start_addr"].Value.Replace("`", String.Empty),
-                        endAddr = matches[0].Groups["end_addr"].Value.Replace("`", String.Empty),
-                        moduleName = matches[0].Groups["module_name"].Value,
-                        pdbStatus = matches[0].Groups["pdb_status"].Value,
-                        pdbPath = matches[0].Groups["path"].Value.Trim(' ')
-                    };
+                        {
+                            startAddr = matches[0].Groups["start_addr"].Value.Replace("`", String.Empty),
+                            endAddr = matches[0].Groups["end_addr"].Value.Replace("`", String.Empty),
+                            moduleName = matches[0].Groups["module_name"].Value,
+                            pdbStatus = matches[0].Groups["pdb_status"].Value,
+                            pdbPath = matches[0].Groups["path"].Value.Trim(' ')
+                        };
                 }
                 else if (module != null)
                 {
