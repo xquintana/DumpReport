@@ -43,13 +43,13 @@ namespace DumpReport
         {
             return (addr.Replace("0x", String.Empty).TrimStart('0').Length > 0);
         }
-        
+
         // Returns a string with the UTC time, based on the input local time and the current UTC offset
         public static string GetUtcTimeFromLocalTime(DateTime localTime)
         {
             TimeSpan utcOffset = TimeZone.CurrentTimeZone.GetUtcOffset(localTime);
             return String.Format("{0} (UTC {1} {2})", localTime.ToString(), ((utcOffset < TimeSpan.Zero) ? "-" : "+"), utcOffset.ToString("hh"));
-        }        
+        }
 
         // Converts a timestamp string from hexadecimal format (POSIX) to UTC time
         public static string GetUtcTimeFromTimestamp(string timestamp)
@@ -70,7 +70,7 @@ namespace DumpReport
         // Returns a string with the dump's UTC creation time. 
         public static string GetDumpUtcTime(string debuggerDumpTime)
         {
-            string time = String.Empty;            
+            string time = String.Empty;
             string pattern = @"\w+\s+(?<month>\w+)\s+(?<day>[0-9]+)\s+(?<hour>[0-9]+):(?<min>[0-9]+):(?<sec>[0-9]+).+(?<year>[0-9]{4})";
             MatchCollection matches = Regex.Matches(debuggerDumpTime, pattern);
             if (matches.Count == 1)
@@ -80,20 +80,18 @@ namespace DumpReport
                 int hour = Int32.Parse(matches[0].Groups["hour"].Value);
                 int min = Int32.Parse(matches[0].Groups["min"].Value);
                 int sec = Int32.Parse(matches[0].Groups["sec"].Value);
-                int year = Int32.Parse(matches[0].Groups["year"].Value);                
+                int year = Int32.Parse(matches[0].Groups["year"].Value);
                 time = new DateTime(year, month, day, hour, min, sec).ToUniversalTime().ToString();
                 time += " (UTC)";
             }
             return time;
         }
 
-        // If the input path is not rooted (e.g: a relative path), returns the path rooted
-        // with the application directory.
+        // Returns a full path based on the input path.
+        // If the input path is null or empty, returns the input.
         public static string GetAbsolutePath(string path)
         {
-            if (path == null) return null;
-            if (path == String.Empty) return String.Empty;
-            if (!Path.IsPathRooted(path))
+            if (path != null && path.Length > 0 && !Path.IsPathRooted(path))
             {
                 path = Path.Combine(Program.appDirectory, path);
                 path = path.Replace("\\.\\", "\\");

@@ -74,7 +74,6 @@ namespace DumpReport
         public void ReadConfigFile(string configPath)
         {
             string value;
-            ReportFile = Path.Combine(Program.appDirectory, ReportFile);
 
             if (!File.Exists(configPath))
                 throw new Exception("Configuration file does not exist.\nPlease run 'DumpReport /CONFIG CREATE' to create it.");
@@ -112,7 +111,7 @@ namespace DumpReport
                                 case "Report":
                                     value = reader["file"];
                                     if (value != null && value.Length > 0)
-                                        ReportFile = Utils.GetAbsolutePath(value);
+                                        ReportFile = value;
                                     value = reader["show"];
                                     if (value != null && value.Length > 0)
                                         ReportShow = (value == "1");
@@ -149,9 +148,8 @@ namespace DumpReport
         // Reads the parameters from the command-line
         public void ReadCommandLine(string[] args)
         {
-            if (args.Length == 1 && Path.GetExtension(args[0]).ToUpper() == ".DMP")
+            if (args.Length == 1 && args[0][0] != '/')
             {
-                if (!File.Exists(args[0])) throw new Exception("Dump file not found: " + args[0]);
                 DumpFile = args[0];
                 return;
             }
@@ -198,20 +196,38 @@ namespace DumpReport
         // Checks that the files and folders exist and sets all paths to absolute paths.
         public void CheckArguments()
         {
+            // Check dump file path.
+            DumpFile = Utils.GetAbsolutePath(DumpFile);
+            if (Path.GetExtension(DumpFile).ToUpper() != ".DMP")
+                throw new Exception("Only dump files (*.dmp) are supported.");
             if (!File.Exists(DumpFile))
                 throw new ArgumentException("Dump file not found: " + DumpFile);
+
+            // Check pdb file path.
+            if (PdbFolder.Length == 0)
+                PdbFolder = Path.GetDirectoryName(DumpFile);
+            else
+                PdbFolder = Utils.GetAbsolutePath(PdbFolder);
+            if (!Directory.Exists(PdbFolder))
+                throw new ArgumentException("PDB folder not found: " + PdbFolder);
+
+            // Check debugger paths.
+            DbgExe64 = Utils.GetAbsolutePath(DbgExe64);
+            DbgExe32 = Utils.GetAbsolutePath(DbgExe32);
             if (DbgExe64.Length == 0 && DbgExe32.Length == 0)
                 throw new ArgumentException("No debuggers specified in the configuration file.\r\nPlease type 'DumpReport /CONFIG HELP' for help.");
             if (!Environment.Is64BitOperatingSystem && DbgExe32.Length == 0)
                 throw new Exception("The attribute 'exe32' must be set on 32-bit computers.");
             CheckDebugger(DbgExe64, "64-bit");
             CheckDebugger(DbgExe32, "32-bit");
-            if (PdbFolder.Length > 0 && !Directory.Exists(PdbFolder))
-                throw new ArgumentException("PDB folder not found: " + PdbFolder);
-            if (PdbFolder.Length == 0)
-                PdbFolder = Path.GetDirectoryName(DumpFile);
+
+            // Check style file.
+            StyleFile = Utils.GetAbsolutePath(StyleFile);
             if (StyleFile.Length > 0 && !File.Exists(StyleFile))
                 throw new ArgumentException("Style file (CSS) not found: " + StyleFile);
+
+            // Check log file.
+            LogFolder = Utils.GetAbsolutePath(LogFolder);
             if (LogFolder.Length > 0)
             {
                 if (!Directory.Exists(LogFolder))
@@ -220,19 +236,14 @@ namespace DumpReport
             }
             else
                 LogFile = DumpFile + ".log";
+
+            // Check symbol cache.
+            SymbolCache = Utils.GetAbsolutePath(SymbolCache);
             if (SymbolCache.Length > 0 && !Directory.Exists(SymbolCache))
                 throw new ArgumentException("Symbol cache folder not found: " + SymbolCache);
 
-            // Set absolute paths
-            DbgExe64 = Utils.GetAbsolutePath(DbgExe64);
-            DbgExe32 = Utils.GetAbsolutePath(DbgExe32);
-            StyleFile = Utils.GetAbsolutePath(StyleFile);
+            // Make sure the report file contains a full path.
             ReportFile = Utils.GetAbsolutePath(ReportFile);
-            SymbolCache = Utils.GetAbsolutePath(SymbolCache);
-            DumpFile = Utils.GetAbsolutePath(DumpFile);
-            PdbFolder = Utils.GetAbsolutePath(PdbFolder);
-            LogFile = Utils.GetAbsolutePath(LogFile);
-            LogFolder = Utils.GetAbsolutePath(LogFolder);
         }
 
         static void PrintColor(string line, ConsoleColor color)
@@ -288,7 +299,7 @@ namespace DumpReport
         // Creates a default CSS file (style.css).
         static bool CreateCSS()
         {
-            string file = Path.Combine(Program.appDirectory, "style.css");
+            string file = Utils.GetAbsolutePath("style.css");
             if (File.Exists(file))
             {
                 Console.Write("File " + file + " already exists. Overwrite? [Y/N] > ");

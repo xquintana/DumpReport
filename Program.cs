@@ -9,7 +9,7 @@ namespace DumpReport
 {
     class Program
     {
-        static public string configFile = Resources.configFile;
+        static public string configFile = null;
         static public string appDirectory = null;
         static public bool is32bitDump = false; // True if the dump corresponds to a 32-bit process
 
@@ -24,7 +24,7 @@ namespace DumpReport
                 WriteTitle();
 
                 appDirectory = new FileInfo(System.Reflection.Assembly.GetExecutingAssembly().Location).DirectoryName;
-                configFile = Path.Combine(appDirectory, configFile);
+                configFile = Utils.GetAbsolutePath(Resources.configFile);
 
                 // If the user just requests help, show help and quit.
                 if (config.CheckHelp(args) == true)
@@ -113,9 +113,11 @@ namespace DumpReport
             script = script.Replace("{LOG_FILE}", outFile);
             // Set the proper intruction pointer register
             script = script.Replace("{INSTRUCT_PTR}", is32bitDump ? "@eip" : "@rip");
-            // If enabled, insert commands used to measure progress
+            // Adapt or remove the progress information
             if (progress != null)
                 script = progress.PrepareScript(script, outFile, is32bitDump);
+            else
+                script = LogProgress.RemoveProgressMark(script);
             return script;
         }
 

@@ -168,6 +168,9 @@ namespace DumpReport
                     }
                 }
             }
+            // If this value has not been found, the debugger's log was not generated properly. 
+            if (DumpBitness == null || DumpBitness.Length == 0)
+                throw new Exception("The debugger's log has an invalid format.");
         }
     }
 

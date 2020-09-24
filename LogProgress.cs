@@ -37,7 +37,7 @@ namespace DumpReport
 
             // Separate the script into progress steps
             string[] steps = script.Split(new string[] { progressMark }, StringSplitOptions.None);
-            
+
             // Insert the command used to measure the progress into the main script
             int numStep = 1;
             string scriptWithProgress = "";
@@ -49,6 +49,13 @@ namespace DumpReport
                 ++numStep;
             }
             return scriptWithProgress;
+        }
+
+        // Removes the progress marks from the debugger's script.
+        // It must be called when the progress is not enabled.
+        static public string RemoveProgressMark(string script)
+        {
+            return script.Replace(progressMark, String.Empty);
         }
 
         // Shows the progress of the creation of the log file by reading the size of the auxiliary file

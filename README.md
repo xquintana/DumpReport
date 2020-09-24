@@ -75,7 +75,7 @@ If the dump file is the only argument, the call can be simplified as follows:
 
 In this case, it is also possible to drag and drop the dump directly onto the executable.
 
-Any value containing spaces must be enclosed in double quotes.  
+Any value containing spaces must be enclosed in double quotes ("").  
 
 Providing the PDB files is not necessary but allows to show the source files and line numbers in the call stack traces.
 
@@ -135,7 +135,7 @@ These are the minimum steps to generate a report from a crash dump of your appli
 * In case of a 64-bit dump, fill in the field _exe64_ with the full path of your WinDBG or CDB 64-bit executable.
 * In case of a 32-bit dump, fill in the field _exe32_ with the full path of your WinDBG or CDB 32-bit executable.
 * Save the XML and close the editor.
-* To generate the report, type `DumpReport your_dump_file.dmp` of drag'n'drop the DMP file onto _DumpReport.exe_.
+* To generate the report, type `DumpReport your_dump_file.dmp` or drag'n'drop the DMP file onto _DumpReport.exe_.
 * After a while (it could take up to a few minutes depending on the dump) an HTML report will be created in the same folder (it should also open in your default browser automatically).
 
 From here on, you can customize the report generation as described in other sections.
@@ -227,7 +227,7 @@ It can be found in the file _Resources.cs_, among other auxiliary scripts.
 __Notes:__  
 
 * {LOG_FILE} is replaced with the debugger's log file name.
-* {PROGRESS_STEP} is replaced with a command that allows to keep track of the progress.
+* {PROGRESS_STEP} is replaced with a command that allows to keep track of the progress, or removed if the progress messages are disabled.
 * {INSTRUCT_PTR} is replaced with the Instruction Pointer register's name (RIP or EIP, depending on the dump bitness).
 * The effective machine is changed to x86 if the module _wow64.dll_ is found. This only applies when debugging a 64-bit dump of a 32-bit process.  
 * '_echo_' commands are used to define sections and simplify the parsing of the log.  
@@ -300,6 +300,9 @@ The executable can be downloaded from [here](/Download/DumpReport.zip).
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
 
 ## History
+
+__1.2__
+* Fixed a bug when the quiet mode was enabled.
 
 __1.1__
 * Added progress messages.
