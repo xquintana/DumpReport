@@ -708,7 +708,7 @@ namespace DumpReport
                     if (Program.is32bitDump) // 32-bits log
                         pattern = @"^\w+\s(?<child>\w+)\s(?<return_addr>\w+)\s(?<args_to_child1>\w+)\s(?<args_to_child2>\w+)\s(?<args_to_child3>\w+)\s(?<call_site>.*)";
                     else // 64-bits log
-                        pattern = @"(?<child>[\w,`]+)\s(?<return_addr>[\w,`]+)\s:\s(?<args_to_child1>[\w,`]+)\s(?<args_to_child2>[\w,`]+)\s(?<args_to_child3>[\w,`]+)\s(?<args_to_child4>[\w,`]+)\s:\s(?<call_site>.*)";
+                        pattern = @"(?<child>[\w,`]+)\s(?<return_addr>[\w,`]+)\s+:\s+(?<args_to_child1>[\w,`]+)\s+(?<args_to_child2>[\w,`]+)\s+(?<args_to_child3>[\w,`]+)\s+(?<args_to_child4>[\w,`]+)\s+:\s+(?<call_site>.*)";
 
                     matches = Regex.Matches(line, pattern);
 
