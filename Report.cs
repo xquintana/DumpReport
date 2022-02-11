@@ -87,7 +87,11 @@ namespace DumpReport
         {
             if (stream == null) return;
             string str = string.Format("<br><b><font color='red'>ERROR: {0}</font></b><br>", text);
-            stream.WriteLine(str);
+            try
+            {
+                stream.WriteLine(str);
+            }
+            catch (Exception){}
         }
 
         public void WriteSectionTitle(string text)

@@ -9,15 +9,19 @@ namespace DumpReport
 {
     class Program
     {
+        const int EXIT_SUCCESS = 0;
+        const int EXIT_FAILURE = 1;
+
         static public string configFile = null;
         static public string appDirectory = null;
         static public bool is32bitDump = false; // True if the dump corresponds to a 32-bit process
+        static int exitCode = EXIT_SUCCESS;
 
         static Config config = new Config(); // Stores the paramaters of the application
         static Report report = new Report(config); // Outputs extracted data to an HTML file
         static LogManager logManager = new LogManager(config, report); // Parses the debugger's output log
 
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
             try
             {
@@ -28,7 +32,7 @@ namespace DumpReport
 
                 // If the user just requests help, show help and quit.
                 if (config.CheckHelp(args) == true)
-                    return;
+                    return EXIT_SUCCESS;
 
                 // Read parameters from config file and command line
                 config.ReadConfigFile(configFile);
@@ -77,6 +81,7 @@ namespace DumpReport
                     LaunchBrowser(config.ReportFile);
             }
             WriteConsole("Finished.");
+            return exitCode; // Return success (0) or failure (1)
         }
 
         // Selects the most appropiate debugger to use depending on the current OS and the dump bitness
@@ -243,6 +248,7 @@ namespace DumpReport
             Console.WriteLine("\n" + msg);
             Console.ResetColor();
             report.WriteError(msg);
+            exitCode = EXIT_FAILURE;
         }
 
         public static void WriteTitle()

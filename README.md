@@ -38,7 +38,7 @@ Since the lists of the environment variables and loaded modules are usually long
 	
   
 In case an exception has been found, it is reported in the section 'Exception Information' showing the faulting thread.  
-Thread details include: thread id, instruction pointer and the call stack.  
+Thread details include: thread id (hex and decimal value), instruction pointer (RIP/EIP for 64/32 bits, resp.) and the call stack.  
 Each frame of the stack indicates the module, function and, if available, the source file and line number.
 
 The last section shows all threads grouped by call stack.  
@@ -138,7 +138,7 @@ These are the minimum steps to generate a report from a crash dump of your appli
 * To generate the report, type `DumpReport your_dump_file.dmp` or drag'n'drop the DMP file onto _DumpReport.exe_.
 * After a while (it could take up to a few minutes depending on the dump) an HTML report will be created in the same folder (it should also open in your default browser automatically).
 
-From here on, you can customize the report generation as described in other sections.
+From here on, you can customize the report generation as described in this document.
 
 ## About dump bitness
 
