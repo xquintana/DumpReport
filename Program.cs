@@ -44,6 +44,7 @@ namespace DumpReport
                 // Basic check of the input parameters
                 config.CheckArguments();
 
+                WriteDebuggerVersion();
                 WriteConsole("Processing dump " + config.DumpFile);
                 WriteConsole("Checking dump bitness...", true);
                 // Find out dump bitness.
@@ -85,7 +86,7 @@ namespace DumpReport
         }
 
         // Selects the most appropiate debugger to use depending on the current OS and the dump bitness
-        public static string GetDebugger()
+        public static string GetDebuggerPath()
         {
             if (!Environment.Is64BitOperatingSystem)
                 return config.DbgExe32;
@@ -150,7 +151,7 @@ namespace DumpReport
                 config.PdbFolder, config.SymbolCache, config.DumpFile, scriptFile);
             ProcessStartInfo psi = new ProcessStartInfo
             {
-                FileName = GetDebugger(),
+                FileName = GetDebuggerPath(),
                 Arguments = arguments,
                 CreateNoWindow = true,
                 WindowStyle = ProcessWindowStyle.Hidden // WinDBG will only hide the main window
@@ -213,9 +214,9 @@ namespace DumpReport
                 is32bitDump = (wow64Found || x86Found);
             }
 
-            if (is32bitDump && GetDebugger() == config.DbgExe64)
+            if (is32bitDump && GetDebuggerPath() == config.DbgExe64)
                 logManager.notes.Add("32-bit dump processed with a 64-bit debugger.");
-            else if (!is32bitDump && GetDebugger() == config.DbgExe32)
+            else if (!is32bitDump && GetDebuggerPath() == config.DbgExe32)
                 logManager.notes.Add("64-bit dump processed with a 32-bit debugger.");
             if (wow64Found)
                 logManager.notes.Add("64-bit dumps of 32-bit processes may show inaccurate or incomplete call stack traces.");
@@ -260,6 +261,15 @@ namespace DumpReport
             Console.WriteLine(String.Format("{0} {1}.{2}", Assembly.GetCallingAssembly().GetName().Name,
                 version.Major, version.Minor));
             Console.ResetColor();
+        }
+
+        public static void WriteDebuggerVersion()
+        {
+            if (config.QuietMode) return;
+            string debuggerPath = GetDebuggerPath();
+            var versionInfo = FileVersionInfo.GetVersionInfo(debuggerPath);
+            string version = versionInfo.FileVersion;
+            Console.WriteLine("Using {0} version {1}", Path.GetFileName(debuggerPath).ToLower(), version);
         }
 
         public static void WriteConsole(string msg, bool sameLine = false)
