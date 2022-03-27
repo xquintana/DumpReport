@@ -155,7 +155,7 @@ namespace DumpReport
                     pattern = @"Debug session time:\s(?<creation_time>.+)";
                     matches = Regex.Matches(lines[idx], pattern);
                     if (matches.Count == 1)
-                        CreationTime = Utils.GetDumpUtcTime(matches[0].Groups["creation_time"].Value);
+                        CreationTime = Utils.GetNormalizedDumpTime(matches[0].Groups["creation_time"].Value);
                 }
                 else if (lines[idx].Contains("eeversion"))
                 {
@@ -569,8 +569,9 @@ namespace DumpReport
                         {
                             pattern = @"\s+(?<frame_addr>\w+):\s";
                             while (++idx < lines.Count)
-                            {
-                                if (lines[idx].Contains("*** WARNING"))
+                            {                                
+                                if (lines[idx].Contains("*** WARNING") || 
+                                    lines[idx].Contains("Stack trace"))  // Version 10.0.22000.194 adds a second line containing "stack trace"
                                     continue;
                                 matches = Regex.Matches(lines[idx], pattern);
                                 if (matches.Count == 1)

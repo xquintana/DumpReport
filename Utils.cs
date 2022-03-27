@@ -44,14 +44,20 @@ namespace DumpReport
             return (addr.Replace("0x", String.Empty).TrimStart('0').Length > 0);
         }
 
-        // Returns a string with the UTC time, based on the input local time and the current UTC offset
+        // Returns a string with the UTC time, based on the input local time and the current UTC offset.
         public static string GetUtcTimeFromLocalTime(DateTime localTime)
         {
             TimeSpan utcOffset = TimeZone.CurrentTimeZone.GetUtcOffset(localTime);
-            return String.Format("{0} (UTC {1} {2})", localTime.ToString(), ((utcOffset < TimeSpan.Zero) ? "-" : "+"), utcOffset.ToString("hh"));
+            string sign = ((utcOffset < TimeSpan.Zero) ? "-" : "+");
+            string offset = utcOffset.ToString("hh");
+            if (utcOffset.Minutes > 0)
+                offset += ":" + utcOffset.ToString("mm");
+            return String.Format($"{localTime.ToString()} (UTC {sign} {offset})");
         }
 
-        // Converts a timestamp string from hexadecimal format (POSIX) to UTC time
+        // Converts a timestamp string containing a 32-bit hexadecimal value to a human-readable time.
+        // The timestamp represents the number of seconds since January 1, 1970 UTC, so the output time is also UTC.
+        // The output is formatted according to the current culture.
         public static string GetUtcTimeFromTimestamp(string timestamp)
         {
             try
@@ -67,10 +73,13 @@ namespace DumpReport
             }
         }
 
-        // Returns a string with the dump's UTC creation time. 
-        public static string GetDumpUtcTime(string debuggerDumpTime)
+        // Returns a string with the dump's creation time formatted with the current culture.
+        // If the input time contains a UTC offset, the output is normalized to UTC + 0 and '(UTC)' is appended.
+        // The input is expected to be in the "en-US" culture. Otherwise, it is returned without conversion.        
+        public static string GetNormalizedDumpTime(string debuggerDumpTime)
         {
-            string time = String.Empty;
+            string timeStr = String.Empty;
+            bool withOffset = false;
             string pattern = @"\w+\s+(?<month>\w+)\s+(?<day>[0-9]+)\s+(?<hour>[0-9]+):(?<min>[0-9]+):(?<sec>[0-9]+).+(?<year>[0-9]{4})";
             MatchCollection matches = Regex.Matches(debuggerDumpTime, pattern);
             if (matches.Count == 1)
@@ -81,10 +90,33 @@ namespace DumpReport
                 int min = Int32.Parse(matches[0].Groups["min"].Value);
                 int sec = Int32.Parse(matches[0].Groups["sec"].Value);
                 int year = Int32.Parse(matches[0].Groups["year"].Value);
-                time = new DateTime(year, month, day, hour, min, sec).ToUniversalTime().ToString();
-                time += " (UTC)";
+                DateTime time = new DateTime(year, month, day, hour, min, sec);
+                // If it contains a UTC offset, normalize to UTC + 0
+                pattern = @"\(UTC(?<offset>.*)\)";
+                matches = Regex.Matches(debuggerDumpTime, pattern);
+                if (matches.Count == 1)
+                {
+                    withOffset = true;
+                    string offset = matches[0].Groups["offset"].Value.Replace(" ", String.Empty);
+                    if (offset.Length > 0)
+                    {
+                        pattern = @"(?<sign>[+,-])(?<hour>[0-9]+):(?<min>[0-9]+)";
+                        matches = Regex.Matches(offset, pattern);
+                        if (matches.Count == 1)
+                        {
+                            int offsetHour = Int32.Parse(matches[0].Groups["hour"].Value);
+                            int offsetMin = Int32.Parse(matches[0].Groups["min"].Value);
+                            int offsetTotalMin = offsetMin + 60 * offsetHour;
+                            if (matches[0].Groups["sign"].Value == "+")
+                                offsetTotalMin *= -1;
+                            time = time.AddMinutes(offsetTotalMin);
+                        }
+                    }
+                }
+                timeStr = time.ToString();
+                if (withOffset) { timeStr += " (UTC)"; }
             }
-            return time;
+            return (timeStr.Length > 0) ? timeStr : debuggerDumpTime;
         }
 
         // Returns a full path based on the input path.
