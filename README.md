@@ -20,7 +20,7 @@ The report has the following appearance:
 It begins with the time and date the report was generated.  
 Then follow details about the dump file (creation time, path and bitness), the process and the environment of the target machine:
 
-* __CLR Version:__ Version of the loaded .Net framework  (only for dumps with managed code).
+* __CLR Version:__ Version of the loaded .Net Framework  (only for dumps with managed code).
 * __Command Line:__ Shows the full command line of the process being debugged, including the arguments.
 * __Process Id:__ Id that the process was using.
 * __Computer Name:__ Name of the target machine.
@@ -29,7 +29,6 @@ Then follow details about the dump file (creation time, path and bitness), the p
 * __Environment Variables:__ The values of the environment variables at the target machine may help figuring out the cause of the crash.
 * __Loaded Modules:__ A detailed list of the loaded modules (address range, timestamp, path, version, etc). It also indicates whether the corresponding PDB file could be loaded during debugging.
 
-  
 Since the lists of the environment variables and loaded modules are usually long, these sections show collapsed by default, but they can be unfolded by clicking on the '+' button:
   
   
@@ -44,7 +43,7 @@ Each frame of the stack indicates the module, function and, if available, the so
 The last section shows all threads grouped by call stack.  
 They appear collapsed by default. Click on the '+' button to display a particular call stack, or use the buttons 'Expand All' and 'Collapse All'.
 
-Optionally, frames with source files under a specific root folder can show emphasized. 
+Optionally, frames with source files under a specific root folder can be shown emphasized (in bold, by default).  
 This can be useful to easily distinguish the frames that belong to our own application.
 
 
@@ -88,13 +87,13 @@ Please note that the debugger may take several minutes to process the dump, espe
 
 ## Configuration file
 
-Settings are stored in a configuration file named _DumpReportCfg.xml_, which must be located together with the executable.  
+The settings are stored in a configuration file named _DumpReportCfg.xml_, which must be located together with the executable.  
 This file can be created by typing:
 
 	DumpReport /CONFIG CREATE
 
 It must be edited in order to specify the location of the debuggers. The rest of the parameters can be left as default.  
-Some parameters like the PDB folder or the output file name can be overriden by command-line.  
+Some parameters like the PDB folder or the output file name can be overriden by the command line.  
 
 ### Xml nodes
 
@@ -269,7 +268,7 @@ The styles that can be modified are:
 * __toggle-button:__ Style of the expand/collapse button (+/-)
 * __toggle-header:__ Auxiliary table that contains a toggle button and a label that describes an area that can be expanded or collapsed.
 * __report-table:__  Style for tables showing thread stacks, loaded modules or environment variables. By default, a striped style is used.
-* __sourcecode-frame:__ Stack frame associated to the source code root.
+* __sourcecode-frame:__ Stack frame associated to the source code root (bolded by default).
 * __thread-id:__     Style for the thread identifier and instruction pointer.
 
 This information can be displayed in the console by typing:
@@ -283,13 +282,16 @@ Run the following command to create a sample CSS file (_style.css_):
 ## Requirements
 
 * Windows 7 or above.
-* .Net framework v4.5 or above.
-* WinDBG or CDB debugger. It can be installed from the component 'Debugging Tools for Windows' of the Windows SDK. Tested with version 10.  
+* .Net Framework v4.5 or above.
+* WinDBG or CDB debugger. It can be installed by selecting '_Debugging Tools for Windows_' from the Windows SDK installer dialog.  
+
+Tested with debugger versions 10.0.16299.91, 10.0.17134.12 and 10.0.22000.194.  
 
 ## Optional debugger extensions
 
-When debugging 32-bit managed dumps, it is recommended to install the _soswow64_ extension from [here](https://github.com/poizan42/soswow64).  
-Copy _soswow64.dll_ into the _winxp_ subfolder of the x86 version of the debugger.
+When debugging 32-bit managed dumps captured in a x64 host, it is recommended to install the _soswow64_ extension from [here](https://github.com/poizan42/soswow64).  
+Copy _soswow64.dll_ into the _winxp_ subfolder of the x86 version of the debugger.  
+NOTE: This extension seems to have stopped working properly at least from version 10.0.19041.685.  
 
 ## Download
 
@@ -300,6 +302,12 @@ The executable can be downloaded from [here](/Download/DumpReport.zip).
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
 
 ## History
+
+__1.3__
+* The debugger version is displayed in the console.
+* The dump creation time was not properly converted to UTC+0.
+* Fixed some errors while parsing call stacks with newer debugger versions.
+* The application returns 1 on failure and 0 on success.
 
 __1.2__
 * Fixed a bug when the quiet mode was enabled.
