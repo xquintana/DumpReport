@@ -110,10 +110,10 @@ namespace DumpReport
         void WriteHTMLHeader()
         {
             if (stream == null) return;
-            stream.WriteLine(string.Format("<header><meta charset='UTF-8'><title>Dump Report [{0}]</title>", Path.GetFileName(config.DumpFile)));
+            stream.WriteLine(string.Format("<head><meta charset='UTF-8'><title>Dump Report [{0}]</title>", Path.GetFileName(config.DumpFile)));
             if (config.StyleFile.Length == 0 || ImportStyle(config.StyleFile) == false)
                 WriteStyle(Resources.css);
-            stream.WriteLine("</header>");
+            stream.WriteLine("</head>");
         }
 
         // Embeds the CSS code into the HTML file
