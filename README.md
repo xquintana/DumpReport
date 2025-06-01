@@ -93,7 +93,7 @@ This file can be created by typing:
 	DumpReport /CONFIG CREATE
 
 It must be edited in order to specify the location of the debuggers. The rest of the parameters can be left as default.  
-Some parameters like the PDB folder or the output file name can be overriden by the command line.  
+Some parameters like the PDB folder or the output file name can be overridden by the command line.  
 
 ### Xml nodes
 
@@ -157,7 +157,7 @@ If the proper exception record cannot be found out, the faulting thread is deduc
 
 ## Code structure
 
-This application has been developed in C# (Visual Studio 2017).  
+This application has been developed in C#.
 The main modules are:  
 
 * __Config.__ Retrieves and validates the parameters from the configuration file and the command-line interface.
@@ -282,7 +282,7 @@ Run the following command to create a sample CSS file (_style.css_):
 ## Requirements
 
 * Windows 7 or above.
-* .Net Framework v4.5 or above.
+* .Net Framework v4.8.
 * WinDBG or CDB debugger. It can be installed by selecting '_Debugging Tools for Windows_' from the Windows SDK installer dialog.  
 
 Tested with debugger versions 10.0.16299.91, 10.0.17134.12 and 10.0.22000.194.  
